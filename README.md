@@ -63,7 +63,11 @@ registration, or request delivery.
 ## Programs and services
 
 The project installs two programs because listener registration and TA loading
-have separate lifetimes:
+have separate lifetimes and security domains. The supplicant handles
+machine-wide listener requests and sensitive persistent objects. Each loader
+holds the load authority and kernel session for one named TA. Keeping these
+roles in separate processes prevents a loader from sharing the supplicant's
+request-processing state or storage descriptors:
 
 - `qsee-supplicant` is the single machine-wide listener daemon. It registers
   the File System (FS) and GlobalPlatform File System (GPFS) listener services,
