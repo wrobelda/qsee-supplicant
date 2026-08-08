@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: make CC=${{ matrix.compiler }}
+      - name: Run hardware-free tests
+        run: make CC=${{ matrix.compiler }} check
+      - name: Test staged installation
+        run: |
+          make CC=${{ matrix.compiler }} DESTDIR="$RUNNER_TEMP/root" install
+          test -x "$RUNNER_TEMP/root/usr/sbin/qsee-supplicant"
+          test -x "$RUNNER_TEMP/root/usr/sbin/qsee-app-loader"
+          test -f "$RUNNER_TEMP/root/usr/lib/systemd/system/qsee-supplicant.service"
+          test -f "$RUNNER_TEMP/root/usr/lib/systemd/system/qsee-app-loader@.service"
+          test -x "$RUNNER_TEMP/root/etc/init.d/qsee-supplicant"
+      - name: Rebuild with sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: |
+          make clean
+          make CC=${{ matrix.compiler }} \
+            CFLAGS="-O1 -g -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined" \
+            LDLIBS="-pthread -fsanitize=address,undefined" check
