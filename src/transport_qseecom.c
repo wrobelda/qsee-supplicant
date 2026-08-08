@@ -43,16 +43,19 @@ static int open_qseecom_priv(void)
 
 static int register_service(int fd, struct registered_service *registered)
 {
-	struct { struct tee_ioctl_open_session_arg arg; struct tee_ioctl_param params[2]; } request = {};
+	uint64_t request_storage[(sizeof(struct tee_ioctl_open_session_arg) +
+				 2 * sizeof(struct tee_ioctl_param) + 7) / 8] = {};
+	struct tee_ioctl_open_session_arg *request = (void *)request_storage;
+	struct tee_ioctl_param *params = request->params;
 	struct tee_ioctl_buf_data data;
 	if (alloc_shm(fd, registered->service->buffer_size, &registered->memory)) return -1;
-	request.arg.num_params = 2;
-	request.params[0].attr = TEE_IOCTL_PARAM_ATTR_TYPE_VALUE_INPUT;
-	request.params[0].a = registered->service->id;
-	request.params[1].attr = TEE_IOCTL_PARAM_ATTR_TYPE_MEMREF_INOUT;
-	request.params[1].b = registered->memory.size;
-	request.params[1].c = registered->memory.id;
-	data.buf_ptr = (uintptr_t)&request; data.buf_len = sizeof(request);
+	request->num_params = 2;
+	params[0].attr = TEE_IOCTL_PARAM_ATTR_TYPE_VALUE_INPUT;
+	params[0].a = registered->service->id;
+	params[1].attr = TEE_IOCTL_PARAM_ATTR_TYPE_MEMREF_INOUT;
+	params[1].b = registered->memory.size;
+	params[1].c = registered->memory.id;
+	data.buf_ptr = (uintptr_t)request_storage; data.buf_len = sizeof(request_storage);
 	return ioctl(fd, TEE_IOC_OPEN_SESSION, &data);
 }
 
@@ -69,18 +72,24 @@ static int serve_qseecom(struct qs_store *store, const struct qs_service *servic
 			services[i].id, services[i].buffer_size);
 	}
 	while (!*stop) {
-		struct { struct tee_iocl_supp_recv_arg arg; struct tee_ioctl_param params[2]; } recv = {};
-		struct { struct tee_iocl_supp_send_arg arg; struct tee_ioctl_param params[1]; } send = {};
+		uint64_t recv_storage[(sizeof(struct tee_iocl_supp_recv_arg) +
+				  2 * sizeof(struct tee_ioctl_param) + 7) / 8] = {};
+		uint64_t send_storage[(sizeof(struct tee_iocl_supp_send_arg) +
+				  sizeof(struct tee_ioctl_param) + 7) / 8] = {};
+		struct tee_iocl_supp_recv_arg *recv = (void *)recv_storage;
+		struct tee_ioctl_param *recv_params = recv->params;
+		struct tee_iocl_supp_send_arg *send = (void *)send_storage;
+		struct tee_ioctl_param *send_params = send->params;
 		struct tee_ioctl_buf_data data; struct registered_service *selected = NULL;
-		recv.arg.num_params = 2; data.buf_ptr = (uintptr_t)&recv; data.buf_len = sizeof(recv);
+		recv->num_params = 2; data.buf_ptr = (uintptr_t)recv_storage; data.buf_len = sizeof(recv_storage);
 		if (ioctl(fd, TEE_IOC_SUPPL_RECV, &data)) { if (errno == EINTR && *stop) { rc = 0; break; } goto out; }
-		for (i = 0; i < count; i++) if (services[i].id == recv.arg.func) selected = &registered[i];
-		send.arg.ret = 1; send.arg.num_params = 1;
+		for (i = 0; i < count; i++) if (services[i].id == recv->func) selected = &registered[i];
+		send->ret = 1; send->num_params = 1;
 		if (selected && !selected->service->dispatch(store, selected->memory.address,
-							 selected->memory.size)) send.arg.ret = 0;
-		send.params[0].attr = TEE_IOCTL_PARAM_ATTR_TYPE_VALUE_OUTPUT;
-		send.params[0].a = recv.params[0].a;
-		data.buf_ptr = (uintptr_t)&send; data.buf_len = sizeof(send);
+							 selected->memory.size)) send->ret = 0;
+		send_params[0].attr = TEE_IOCTL_PARAM_ATTR_TYPE_VALUE_OUTPUT;
+		send_params[0].a = recv_params[0].a;
+		data.buf_ptr = (uintptr_t)send_storage; data.buf_len = sizeof(send_storage);
 		if (ioctl(fd, TEE_IOC_SUPPL_SEND, &data)) goto out;
 	}
 out:
