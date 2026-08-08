@@ -84,21 +84,11 @@ functions normally handled by Qualcomm's `qseecomd` on Android.
 The supplied systemd units reflect this split. `qsee-supplicant.service` runs
 the listener daemon. `qsee-app-loader@.service` is a template unit; an instance
 such as `qsee-app-loader@example-ta.service` runs
-`qsee-app-loader example-ta`. The template requires and starts after the
+`qsee-app-loader example-ta`. The template wants and starts after the
 supplicant because a TA may request listener services as soon as it is loaded.
-
-A service that communicates with a TA should depend on the corresponding loader
-instance. For example, a system whose `fprintd` driver uses `example-ta` can add
-the following systemd drop-in for `fprintd.service`:
-
-```ini
-[Unit]
-Requires=qsee-app-loader@example-ta.service
-After=qsee-app-loader@example-ta.service
-```
-
-The supplied units do not name client services because the required TAs and
-their consumers are system-specific.
+If the supplicant stops or restarts, systemd leaves the loader processes
+running so they retain their application sessions while listener services are
+re-registered.
 
 Keeping the kernel sessions in separate processes is intentional. Restarting
 the supplicant re-registers its listeners without closing the loader's session
@@ -227,3 +217,26 @@ after its firmware name. For example:
 systemctl enable --now qsee-supplicant.service
 systemctl enable --now qsee-app-loader@example-ta.service
 ```
+
+## TODO
+
+Application loading is functional, but restart recovery, readiness reporting,
+and application lifecycle reporting are not implemented yet:
+
+- [ ] Make `qsee-app-loader` attach to an application that is already loaded before
+  attempting a privileged load. If loading races with another process, retry
+  the unprivileged attach. This allows a loader to restart while existing client
+  sessions keep the application resident.
+- [ ] Change the loader service to report readiness only after it has loaded or
+  attached to its application. `After=` alone only orders process startup; it
+  does not report that the application is available.
+- [ ] Expose loaded QSEECOM applications as kernel devices with sysfs state and
+  udev add/remove events. The Linux TEE core already provides a `tee` bus for
+  TEE client devices. OP-TEE enumerates advertised device TAs and registers
+  devices named `optee-ta-<UUID>` on that bus, with
+  `MODALIAS=tee:<UUID>`. These devices describe advertised services rather than
+  the current loaded-session set. The QTEE driver does not currently register
+  loaded objects or applications there. QSEECOM identifies applications by
+  name rather than UUID, so reusing the `tee` bus requires a defined name-based
+  identity and modalias convention; a separate QSEECOM-only class should not be
+  introduced without first resolving that generic interface.

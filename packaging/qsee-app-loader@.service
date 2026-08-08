@@ -1,7 +1,7 @@
 [Unit]
 Description=Hold Qualcomm TEE application %i loaded
 Documentation=file:///usr/share/doc/qsee-supplicant/README.md
-Requires=qsee-supplicant.service
+Wants=qsee-supplicant.service
 After=qsee-supplicant.service
 
 [Service]
