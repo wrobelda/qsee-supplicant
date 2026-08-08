@@ -28,7 +28,7 @@ int main(void)
 
 	/* Listener 10's observed open/write/seek/read/close and errno protocol. */
 	memset(b, 0, QS_FS_BUFFER_SIZE); p32(b, 0x202);
-	strcpy((char *)b + 4, "/persist/data/fingerprint_version");
+	strcpy((char *)b + 4, "/persist/data/test_version");
 	p32(b + 260, O_RDWR | O_CREAT);
 	assert(!qs_fs_dispatch(&store, b, QS_FS_BUFFER_SIZE));
 	handle = (int)u32(b + 4); assert(handle >= 3);

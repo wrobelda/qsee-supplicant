@@ -1,7 +1,6 @@
 [Unit]
 Description=Machine-wide Qualcomm TEE supplicant
 Documentation=file:///usr/share/doc/qsee-supplicant/README.md
-Before=fprintd.service
 After=systemd-udev-settle.service
 
 [Service]
