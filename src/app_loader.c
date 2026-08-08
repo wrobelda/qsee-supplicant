@@ -44,10 +44,10 @@ static int open_qseecom_priv(void)
 int main(int argc, char **argv)
 {
 	struct tee_ioctl_shm_alloc_data allocation = { .size = APP_NAME_MAX };
-	struct {
-		struct tee_ioctl_open_session_arg arg;
-		struct tee_ioctl_param params[1];
-	} session = {};
+	uint64_t session_storage[(sizeof(struct tee_ioctl_open_session_arg) +
+				  sizeof(struct tee_ioctl_param) + 7) / 8] = {};
+	struct tee_ioctl_open_session_arg *session = (void *)session_storage;
+	struct tee_ioctl_param *params = session->params;
 	struct tee_ioctl_buf_data data;
 	struct sigaction action = { .sa_handler = stop_handler };
 	void *name_memory;
@@ -85,12 +85,12 @@ int main(int argc, char **argv)
 	memset(name_memory, 0, allocation.size);
 	memcpy(name_memory, argv[1], strlen(argv[1]));
 
-	session.arg.num_params = 1;
-	session.params[0].attr = TEE_IOCTL_PARAM_ATTR_TYPE_MEMREF_INPUT;
-	session.params[0].b = strlen(argv[1]) + 1;
-	session.params[0].c = allocation.id;
-	data.buf_ptr = (uintptr_t)&session;
-	data.buf_len = sizeof(session);
+	session->num_params = 1;
+	params[0].attr = TEE_IOCTL_PARAM_ATTR_TYPE_MEMREF_INPUT;
+	params[0].b = strlen(argv[1]) + 1;
+	params[0].c = allocation.id;
+	data.buf_ptr = (uintptr_t)session_storage;
+	data.buf_len = sizeof(session_storage);
 	if (ioctl(tee_fd, TEE_IOC_OPEN_SESSION, &data)) {
 		fprintf(stderr, "event=loader_error app=%s stage=load errno=%d message=\"%s\"\n",
 			argv[1], errno, strerror(errno));
@@ -100,14 +100,14 @@ int main(int argc, char **argv)
 	}
 
 	fprintf(stderr, "event=application_loaded app=%s session=%u\n",
-		argv[1], session.arg.session);
+		argv[1], session->session);
 	sigemptyset(&action.sa_mask);
 	sigaction(SIGINT, &action, NULL);
 	sigaction(SIGTERM, &action, NULL);
 	while (!stopping)
 		pause();
 	fprintf(stderr, "event=application_unloading app=%s session=%u\n",
-		argv[1], session.arg.session);
+		argv[1], session->session);
 	munmap(name_memory, allocation.size);
 	close(tee_fd);
 	return 0;
