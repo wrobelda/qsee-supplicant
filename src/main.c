@@ -13,7 +13,9 @@ static volatile sig_atomic_t stopping;
 static void stop_handler(int signal_number) { (void)signal_number; stopping = 1; }
 static void ready_handler(void *data)
 {
-	(void)data;
+	unsigned int *delay = data;
+
+	*delay = 1;
 	if (qs_notify("READY=1\nSTATUS=Listener services registered") < 0)
 		fprintf(stderr, "event=notify_error errno=%d message=\"%s\"\n",
 			errno, strerror(errno));
@@ -38,7 +40,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "event=transport_start transport=%s state=%s\n", qs_qseecom_transport.name, state);
 		if (!qs_qseecom_transport.serve(&store, qs_builtin_services,
 					 qs_builtin_service_count, &stopping,
-					 ready_handler, NULL)) break;
+					 ready_handler, &delay)) break;
 		fprintf(stderr, "event=transport_error transport=%s errno=%d message=\"%s\" retry=%u\n",
 			qs_qseecom_transport.name, errno, strerror(errno), delay);
 		for (unsigned int i = 0; i < delay && !stopping; i++) sleep(1);
