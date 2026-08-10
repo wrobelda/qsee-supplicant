@@ -2,7 +2,13 @@ name: Packages and releases
 
 on:
   push:
+    branches: [main]
+    tags: ['v*']
   pull_request:
+
+concurrency:
+  group: packages-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -109,6 +115,15 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
+      - name: Verify package version
+        run: |
+          package_version=$(sed -n 's/^pkgver=//p' packaging/alpine/APKBUILD | tr -d "\"'")
+          package_revision=$(sed -n 's/^pkgrel=//p' packaging/alpine/APKBUILD | tr -d "\"'")
+          test "$package_version" = "$(cat VERSION)"
+          case "$GITHUB_REF" in
+            refs/tags/*) test "v$(cat VERSION)" = "$GITHUB_REF_NAME" ;;
+          esac
+          echo "APK_RELEASE=$package_version-r$package_revision" >> "$GITHUB_ENV"
       - name: Build packages and archive
         run: |
           mkdir dist
@@ -128,15 +143,25 @@ jobs:
             '
       - name: Inspect packages and archive
         run: |
+          base_apk="dist/qsee-supplicant-$APK_RELEASE.apk"
+          openrc_apk="dist/qsee-supplicant-openrc-$APK_RELEASE.apk"
+          systemd_apk="dist/qsee-supplicant-systemd-$APK_RELEASE.apk"
+          for package in "$base_apk" "$openrc_apk" "$systemd_apk"; do
+            test -f "$package" || {
+              echo "Expected APK was not built: $package" >&2
+              find dist -maxdepth 1 -type f -print >&2
+              exit 1
+            }
+          done
           test "$(find dist -name '*.apk' | wc -l)" -eq 4
           file qsee-supplicant | grep -F 'ARM aarch64'
           readelf -l qsee-supplicant | grep -F '/lib/ld-musl-aarch64.so.1'
           tar -tzf dist/*-musl.tar.gz | grep -E '/usr/sbin/qsee-supplicant$'
-          tar --ignore-zeros -tzf dist/qsee-supplicant-[0-9]*-r0.apk | \
+          tar --ignore-zeros -tzf "$base_apk" | \
             grep -E '^usr/sbin/qsee-supplicant$'
-          tar --ignore-zeros -tzf dist/qsee-supplicant-openrc-*.apk | \
+          tar --ignore-zeros -tzf "$openrc_apk" | \
             grep -E '^etc/init.d/qsee-app-loader$'
-          tar --ignore-zeros -tzf dist/qsee-supplicant-systemd-*.apk | \
+          tar --ignore-zeros -tzf "$systemd_apk" | \
             grep -E '^usr/lib/systemd/system/qsee-app-loader@.service$'
       - uses: actions/upload-artifact@v7
         with:
@@ -165,5 +190,8 @@ jobs:
         run: |
           cd dist
           sha256sum ./* > SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" ./* --generate-notes \
-            --title "qsee-supplicant $GITHUB_REF_NAME"
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --generate-notes \
+              --title "qsee-supplicant $GITHUB_REF_NAME"
+          fi
+          gh release upload "$GITHUB_REF_NAME" ./* --clobber
