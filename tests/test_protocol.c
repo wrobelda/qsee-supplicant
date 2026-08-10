@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "qsee_supplicant.h"
 #include <assert.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -13,12 +14,27 @@
 static uint32_t u32(const void *p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static void p32(void *p, uint32_t v) { memcpy(p, &v, 4); }
 
+static size_t open_fd_count(void)
+{
+	struct dirent *entry;
+	DIR *dir = opendir("/proc/self/fd");
+	size_t count = 0;
+
+	assert(dir);
+	while ((entry = readdir(dir)))
+		if (strcmp(entry->d_name, ".") && strcmp(entry->d_name, ".."))
+			count++;
+	closedir(dir);
+	return count;
+}
+
 int main(void)
 {
 	char root[] = "/tmp/qsee-supp-test.XXXXXX", out[512], file[600];
 	struct qs_store store = { .root_fd = -1 };
 	uint8_t *b = calloc(1, QS_GPFS_BUFFER_SIZE);
 	struct stat st;
+	size_t fd_count;
 	int handle;
 	assert(mkdtemp(root));
 	assert(!qs_store_open(&store, root, 0600, 0700));
@@ -49,6 +65,29 @@ int main(void)
 	assert(!qs_fs_dispatch(&store, b, QS_FS_BUFFER_SIZE)); assert(u32(b + 4) == ENOENT);
 	memset(b, 0, QS_FS_BUFFER_SIZE); p32(b, 0x202); strcpy((char *)b + 4, "../escape");
 	assert(!qs_fs_dispatch(&store, b, QS_FS_BUFFER_SIZE)); assert(u32(b + 4) == UINT32_MAX);
+
+	/* A failed rename destination must not leak the opened source parent. */
+	memset(b, 0, QS_FS_BUFFER_SIZE); p32(b, 0x202);
+	strcpy((char *)b + 4, "rename-source"); p32(b + 260, O_WRONLY | O_CREAT);
+	assert(!qs_fs_dispatch(&store, b, QS_FS_BUFFER_SIZE));
+	handle = (int)u32(b + 4); assert(handle >= 3);
+	memset(b, 0, QS_FS_BUFFER_SIZE); p32(b, 0x209); p32(b + 4, (uint32_t)handle);
+	assert(!qs_fs_dispatch(&store, b, QS_FS_BUFFER_SIZE));
+	memset(b, 0, QS_FS_BUFFER_SIZE); p32(b, 0x202);
+	strcpy((char *)b + 4, "blocked"); p32(b + 260, O_WRONLY | O_CREAT);
+	assert(!qs_fs_dispatch(&store, b, QS_FS_BUFFER_SIZE));
+	handle = (int)u32(b + 4); assert(handle >= 3);
+	memset(b, 0, QS_FS_BUFFER_SIZE); p32(b, 0x209); p32(b + 4, (uint32_t)handle);
+	assert(!qs_fs_dispatch(&store, b, QS_FS_BUFFER_SIZE));
+	fd_count = open_fd_count();
+	for (int i = 0; i < 32; i++) {
+		memset(b, 0, QS_FS_BUFFER_SIZE); p32(b, 0x217);
+		strcpy((char *)b + 4, "rename-source");
+		strcpy((char *)b + 260, "blocked/target");
+		assert(!qs_fs_dispatch(&store, b, QS_FS_BUFFER_SIZE));
+		assert(u32(b + 4) == UINT32_MAX);
+	}
+	assert(open_fd_count() == fd_count);
 
 	p32(b, 1); strcpy((char *)b + 4, "/data/vendor/fpdump/a.so");
 	p32(b + 0x104, 0); p32(b + 0x108, 5); memcpy(b + 0x110, "first", 5);

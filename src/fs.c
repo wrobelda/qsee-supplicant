@@ -141,8 +141,14 @@ int qs_fs_dispatch(struct qs_store *s, void *buffer, size_t size)
 	case 0x217:
 		if (normalize(b, path, sizeof(path)) ||
 		    qs_normalize_path((char *)b + 260, FS_PATH_SIZE, path2, sizeof(path2)) ||
-		    qs_open_parent(s, path, false, &parent, leaf, sizeof(leaf)) ||
-		    qs_open_parent(s, path2, true, &parent2, leaf2, sizeof(leaf2))) return fail(b, op);
+		    qs_open_parent(s, path, false, &parent, leaf, sizeof(leaf)))
+			return fail(b, op);
+		if (qs_open_parent(s, path2, true, &parent2, leaf2, sizeof(leaf2))) {
+			rc = errno;
+			close(parent);
+			errno = rc;
+			return fail(b, op);
+		}
 		rc = renameat(parent, leaf, parent2, leaf2); close(parent); close(parent2);
 		return rc ? fail(b, op) : reply(b, op, 0);
 	case 0x21c: return reply(b, op, last_error);
