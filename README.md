@@ -232,10 +232,9 @@ sudo apk add --allow-untrusted \
 
 The APK build separates the programs from service-manager integration. Install
 `qsee-supplicant-systemd` on a systemd postmarketOS installation or
-`qsee-supplicant-openrc` on an OpenRC installation. A configured APK repository
-selects the matching service subpackage automatically. Local release files must
-be named explicitly as shown above. The optional `qsee-supplicant-doc` package
-contains the README and license texts.
+`qsee-supplicant-openrc` on an OpenRC installation. Install exactly one of
+these service packages alongside the base package, as shown above. The optional
+`qsee-supplicant-doc` package contains the README and license texts.
 
 The release also contains the tagged source tree and ARM64 binary archives for
 glibc and musl systems. The binary archives contain both systemd and OpenRC
