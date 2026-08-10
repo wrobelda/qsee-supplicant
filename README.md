@@ -41,27 +41,29 @@ single machine-wide service because the kernel provides one listener request
 queue for each QSEECOM TEE device, not one queue for each TA.
 
 This project requires the QSEECOM TEE driver provided by
-[`goodix-fp-spi-linux`](https://github.com/wrobelda/goodix-fp-spi-linux).
-That driver implements QSEECOM through the Linux TEE subsystem and exposes the
-paired `/dev/teeN` client and `/dev/teeprivN` privileged devices. Driver probe
-fails and unregisters both if either device cannot be registered. The loader
-requires both: it attaches through the client device and loads through the
-privileged device. A privileged-only setup is incomplete and is rejected rather
-than used to load a TA that ordinary clients cannot access. The driver is not
-yet included in mainline Linux, so the running kernel must include the driver
-from that repository.
+[`goodix-fp-spi-linux`](https://github.com/wrobelda/goodix-fp-spi-linux). The
+driver implements QSEECOM through the Linux TEE subsystem. It is not yet
+included in mainline Linux, so the running kernel must include the driver from
+that repository.
+
+The driver exposes a pair of devices: the `/dev/teeN` client device and the
+`/dev/teeprivN` privileged device. Driver probe fails and unregisters both if
+either device cannot be registered. The loader requires both, because it
+attaches through the client device and loads through the privileged device. A
+privileged-only setup is incomplete, so the loader rejects it rather than load
+a TA that ordinary clients cannot access.
 
 As explained in the overview, some TAs need operations that only the host
-operating system can provide, such as reading and writing files. They request
-those operations through listener services. Each listener has a numeric service
-identifier and a defined request and response format. A supplicant is a daemon
-running in the normal Linux environment. It registers the listeners, receives
-requests from the TEE, performs the permitted operations, and returns the
-results.
+operating system can provide, such as reading and writing files, and they
+request those operations through listener services. Each listener has a
+numeric service identifier and a defined request and response format. A
+supplicant is a daemon in the normal Linux environment: it registers the
+listeners, receives requests from the TEE, performs the permitted operations,
+and returns the results.
 
 The current implementation provides two filesystem listener protocols. Its
-listener handlers are separate from the kernel request loop, so further QSEECOM
-listener protocols can be implemented without rewriting device discovery,
+listener handlers are separate from the kernel request loop, so further
+QSEECOM listener protocols can be added without rewriting device discovery,
 registration, or request delivery.
 
 ## Programs and services
