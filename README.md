@@ -195,6 +195,26 @@ The tests use a temporary directory and do not require TEE hardware. They
 cover listener request parsing, safe path handling, restrictive file modes,
 atomic GPFS object replacement, and protocol-required backup files.
 
+### Distribution packages
+
+Release assets include ARM64 packages for Debian, Ubuntu, and Fedora. Install
+the package appropriate for the operating system:
+
+```sh
+sudo apt install ./qsee-supplicant_0.1.0-1_arm64.deb
+sudo dnf install ./qsee-supplicant-0.1.0-1.*.aarch64.rpm
+```
+
+Package installation does not start either service. The Debian and Ubuntu
+package also leaves both services disabled. The Fedora package applies the
+operating system's systemd preset policy. The QSEECOM TEE driver and the
+trusted application (TA) selection are machine-specific; enable the services
+only after the kernel and hardware integration are installed.
+
+Debian and Ubuntu packages can be built with `dpkg-buildpackage -b -us -uc`.
+Fedora packages can be built from
+[`packaging/rpm/qsee-supplicant.spec`](packaging/rpm/qsee-supplicant.spec).
+
 ## Configuration and state
 
 ```sh

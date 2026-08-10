@@ -1,0 +1,16 @@
+Source: qsee-supplicant
+Section: admin
+Priority: optional
+Maintainer: Dawid Wróbel <me@dawidwrobel.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.2
+Homepage: https://github.com/wrobelda/qsee-supplicant
+Rules-Requires-Root: no
+
+Package: qsee-supplicant
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: userspace services for Qualcomm QSEECOM trusted applications
+ Provides a machine-wide listener supplicant and a per-application loader for
+ trusted applications using Qualcomm's legacy QSEECOM interface through the
+ Linux TEE subsystem.

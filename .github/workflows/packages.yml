@@ -1,0 +1,99 @@
+name: Packages and releases
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  deb:
+    name: Debian package (arm64)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential debhelper lintian
+      - name: Verify package version
+        run: |
+          package_version=$(sed -n '1s/.*(\([^)]*\)).*/\1/p' debian/changelog)
+          test "$package_version" = "$(cat VERSION)-1"
+          case "$GITHUB_REF" in
+            refs/tags/*) test "v$(cat VERSION)" = "$GITHUB_REF_NAME" ;;
+          esac
+      - name: Build package
+        run: dpkg-buildpackage -b -us -uc
+      - name: Inspect package
+        run: |
+          mkdir dist
+          cp ../qsee-supplicant_*.deb dist/
+          lintian --fail-on error dist/*.deb
+          dpkg-deb --fsys-tarfile dist/*.deb | tar -tf - | grep -Fx './usr/sbin/qsee-supplicant'
+          dpkg-deb --fsys-tarfile dist/*.deb | tar -tf - | grep -Fx './usr/lib/systemd/system/qsee-app-loader@.service'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-arm64
+          path: dist/*.deb
+          if-no-files-found: error
+
+  rpm:
+    name: Fedora package (aarch64)
+    runs-on: ubuntu-24.04-arm
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install packaging tools
+        run: dnf install -y gcc make rpm-build rpmdevtools rpmlint systemd-rpm-macros tar gzip
+      - name: Verify package version
+        run: |
+          package_version=$(sed -n 's/^Version:[[:space:]]*//p' packaging/rpm/qsee-supplicant.spec)
+          test "$package_version" = "$(cat VERSION)"
+          case "$GITHUB_REF" in
+            refs/tags/*) test "v$(cat VERSION)" = "$GITHUB_REF_NAME" ;;
+          esac
+      - name: Build package
+        run: |
+          version=$(cat VERSION)
+          topdir=$(rpm --eval '%{_topdir}')
+          mkdir -p "$topdir/SOURCES"
+          tar --exclude=.git --exclude=.claude --exclude=dist \
+            --transform "s,^\./,qsee-supplicant-$version/," \
+            -czf "$topdir/SOURCES/qsee-supplicant-$version.tar.gz" .
+          rpmbuild -ba packaging/rpm/qsee-supplicant.spec
+      - name: Inspect package
+        run: |
+          mkdir dist
+          find "$(rpm --eval '%{_rpmdir}')" -type f \
+            -name 'qsee-supplicant-[0-9]*.rpm' -exec cp {} dist/ \;
+          rpmlint packaging/rpm/qsee-supplicant.spec dist/*.rpm
+          rpm -qlp dist/*.rpm | grep -Fx '/usr/bin/qsee-supplicant'
+          rpm -qlp dist/*.rpm | grep -Fx '/usr/lib/systemd/system/qsee-app-loader@.service'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm-aarch64
+          path: dist/*.rpm
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [deb, rpm]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum ./* > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" ./* --generate-notes \
+            --title "qsee-supplicant $GITHUB_REF_NAME"
