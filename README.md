@@ -98,6 +98,17 @@ listener services. Only then does it attach to the TA or load it. Both
 programs report readiness to systemd: the supplicant after listener
 registration, and a loader after its TA session is open.
 
+OpenRC 0.62 and later uses the same readiness notifications. Create one loader
+service link for each TA, using the TA firmware name as the suffix:
+
+```sh
+ln -s qsee-app-loader /etc/init.d/qsee-app-loader.example-ta
+rc-update add qsee-app-loader.example-ta default
+```
+
+The loader service has a hard dependency on `qsee-supplicant`, so OpenRC waits
+for listener registration before it starts the loader instance.
+
 The kernel sessions live in separate processes on purpose:
 
 - Restarting the supplicant re-registers its listeners; it does not close a
@@ -199,13 +210,27 @@ atomic GPFS object replacement, and protocol-required backup files.
 
 ### Distribution packages
 
-Release assets include ARM64 packages for Debian, Ubuntu, and Fedora. Install
-the package appropriate for the operating system:
+Release assets include ARM64 packages for Debian, Ubuntu, Fedora, and
+postmarketOS. Install the package appropriate for the operating system:
 
 ```sh
-sudo apt install ./qsee-supplicant_0.1.0-1_arm64.deb
-sudo dnf install ./qsee-supplicant-0.1.0-1.*.aarch64.rpm
+sudo apt install ./qsee-supplicant_0.1.1-1_arm64.deb
+sudo dnf install ./qsee-supplicant-0.1.1-1.*.aarch64.rpm
+sudo apk add --allow-untrusted \
+  ./qsee-supplicant-0.1.1-r0.apk \
+  ./qsee-supplicant-systemd-0.1.1-r0.apk
 ```
+
+The APK build separates the programs from service-manager integration. Install
+`qsee-supplicant-systemd` on a systemd postmarketOS installation or
+`qsee-supplicant-openrc` on an OpenRC installation. A configured APK repository
+selects the matching service subpackage automatically. Local release files must
+be named explicitly as shown above.
+
+The release also contains the tagged source tree and ARM64 binary archives for
+glibc and musl systems. The binary archives contain both systemd and OpenRC
+service files, but do not register them with the service manager. Distribution
+packages are preferred when one is available.
 
 Package installation does not start either service. The Debian and Ubuntu
 package also leaves both services disabled. The Fedora package applies the
@@ -216,6 +241,8 @@ only after the kernel and hardware integration are installed.
 Debian and Ubuntu packages can be built with `dpkg-buildpackage -b -us -uc`.
 Fedora packages can be built from
 [`packaging/rpm/qsee-supplicant.spec`](packaging/rpm/qsee-supplicant.spec).
+The postmarketOS packages are defined by
+[`packaging/alpine/APKBUILD`](packaging/alpine/APKBUILD).
 
 ## Configuration and state
 

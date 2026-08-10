@@ -1,0 +1,25 @@
+#!/sbin/openrc-run
+
+name="QSEE application loader"
+description="Keep one Qualcomm trusted application available"
+command="/usr/sbin/qsee-app-loader"
+command_background=true
+notify=socket:ready
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/${RC_SVCNAME}.log"
+error_log="/var/log/${RC_SVCNAME}.log"
+
+depend() {
+	need qsee-supplicant
+}
+
+start_pre() {
+	ta_name=${RC_SVCNAME#qsee-app-loader.}
+	case ${ta_name} in
+	""|"${RC_SVCNAME}"|*[!A-Za-z0-9._-]*)
+		eerror "Use a service instance named qsee-app-loader.<ta-name>"
+		return 1
+		;;
+	esac
+	command_args=${ta_name}
+}

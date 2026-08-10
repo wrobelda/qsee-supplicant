@@ -7,8 +7,8 @@ override_dh_auto_test:
 	$(MAKE) check
 
 override_dh_auto_install:
-	$(MAKE) DESTDIR=$(CURDIR)/debian/qsee-supplicant install
-	rm $(CURDIR)/debian/qsee-supplicant/etc/init.d/qsee-supplicant
+	$(MAKE) DESTDIR=$(CURDIR)/debian/qsee-supplicant \
+		install-bin install-systemd install-doc
 
 override_dh_installsystemd:
 	dh_installsystemd --no-enable --no-start

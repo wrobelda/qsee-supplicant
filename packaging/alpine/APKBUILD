@@ -1,0 +1,43 @@
+# Maintainer: Dawid Wrobel <me@dawidwrobel.com>
+pkgname=qsee-supplicant
+pkgver=0.1.1
+pkgrel=0
+pkgdesc="Userspace services for Qualcomm QSEECOM trusted applications"
+url="https://github.com/wrobelda/qsee-supplicant"
+arch="all"
+license="BSD-2-Clause AND BSD-3-Clause-Clear"
+makedepends="linux-headers"
+subpackages="$pkgname-openrc $pkgname-systemd:systemd"
+options="!checkroot"
+builddir="$startdir/../.."
+
+build() {
+	make -C "$builddir"
+}
+
+check() {
+	make -C "$builddir" check
+}
+
+package() {
+	make -C "$builddir" DESTDIR="$pkgdir" \
+		install-bin install-systemd install-openrc install-doc
+	install -Dm644 "$builddir/LICENSE" \
+		"$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+	install -Dm644 "$builddir/LICENSES/BSD-3-Clause-Clear.txt" \
+		"$pkgdir/usr/share/licenses/$pkgname/BSD-3-Clause-Clear.txt"
+}
+
+openrc() {
+	pkgdesc="$pkgdesc (OpenRC services)"
+	depends="openrc>=0.62"
+	install_if="$pkgname=$pkgver-r$pkgrel openrc"
+	default_openrc
+}
+
+systemd() {
+	pkgdesc="$pkgdesc (systemd services)"
+	depends="systemd"
+	install_if="$pkgname=$pkgver-r$pkgrel systemd"
+	amove usr/lib/systemd/system
+}

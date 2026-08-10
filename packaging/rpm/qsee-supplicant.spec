@@ -1,5 +1,5 @@
 Name:           qsee-supplicant
-Version:        0.1.0
+Version:        0.1.1
 Release:        1%{?dist}
 Summary:        Userspace services for Qualcomm QSEECOM trusted applications
 
@@ -28,8 +28,7 @@ Linux TEE subsystem.
 
 %install
 %make_install PREFIX=%{_prefix} SBINDIR=%{_sbindir} UNITDIR=%{_unitdir} \
-              SYSCONFDIR=%{_sysconfdir} DOCDIR=%{_docdir}/%{name}
-rm %{buildroot}%{_sysconfdir}/init.d/qsee-supplicant
+              DOCDIR=%{_docdir}/%{name} install-bin install-systemd install-doc
 
 %post
 %systemd_post qsee-supplicant.service qsee-app-loader@.service
@@ -49,5 +48,8 @@ rm %{buildroot}%{_sysconfdir}/init.d/qsee-supplicant
 %{_docdir}/%{name}/README.md
 
 %changelog
+* Mon Aug 10 2026 Dawid Wróbel <me@dawidwrobel.com> - 0.1.1-1
+- Add Alpine and portable archive release formats.
+
 * Mon Aug 10 2026 Dawid Wróbel <me@dawidwrobel.com> - 0.1.0-1
 - Initial release.

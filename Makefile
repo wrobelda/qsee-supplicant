@@ -15,7 +15,7 @@ SYSCONFDIR ?= /etc
 DOCDIR ?= $(PREFIX)/share/doc/qsee-supplicant
 DESTDIR ?=
 
-.PHONY: all check clean install
+.PHONY: all check clean install install-bin install-doc install-openrc install-systemd
 all: qsee-supplicant qsee-app-loader
 
 qsee-supplicant: src/main.c src/transport_qseecom.c $(COMMON) $(NOTIFY)
@@ -38,13 +38,25 @@ check: test-protocol test-notify test-app-acquire
 	./test-notify
 	./test-app-acquire
 
-install: qsee-supplicant qsee-app-loader
-	install -d $(DESTDIR)$(SBINDIR) $(DESTDIR)$(UNITDIR) $(DESTDIR)$(SYSCONFDIR)/init.d $(DESTDIR)$(DOCDIR)
+install: install-bin install-systemd install-openrc install-doc
+
+install-bin: qsee-supplicant qsee-app-loader
+	install -d $(DESTDIR)$(SBINDIR)
 	install -m 0755 qsee-supplicant $(DESTDIR)$(SBINDIR)/qsee-supplicant
 	install -m 0755 qsee-app-loader $(DESTDIR)$(SBINDIR)/qsee-app-loader
+
+install-systemd:
+	install -d $(DESTDIR)$(UNITDIR)
 	install -m 0644 packaging/qsee-supplicant.service $(DESTDIR)$(UNITDIR)/
 	install -m 0644 packaging/qsee-app-loader@.service $(DESTDIR)$(UNITDIR)/
+
+install-openrc:
+	install -d $(DESTDIR)$(SYSCONFDIR)/init.d
 	install -m 0755 packaging/qsee-supplicant.openrc $(DESTDIR)$(SYSCONFDIR)/init.d/qsee-supplicant
+	install -m 0755 packaging/qsee-app-loader.openrc $(DESTDIR)$(SYSCONFDIR)/init.d/qsee-app-loader
+
+install-doc:
+	install -d $(DESTDIR)$(DOCDIR)
 	install -m 0644 README.md $(DESTDIR)$(DOCDIR)/README.md
 
 clean:

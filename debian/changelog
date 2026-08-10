@@ -1,3 +1,9 @@
+qsee-supplicant (0.1.1-1) unstable; urgency=medium
+
+  * Add Alpine and portable archive release formats.
+
+ -- Dawid Wróbel <me@dawidwrobel.com>  Mon, 10 Aug 2026 20:30:00 +0200
+
 qsee-supplicant (0.1.0-1) unstable; urgency=medium
 
   * Initial release.

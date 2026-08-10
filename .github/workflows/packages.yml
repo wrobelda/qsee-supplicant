@@ -77,10 +77,80 @@ jobs:
           path: dist/*.rpm
           if-no-files-found: error
 
+  glibc-archives:
+    name: Source and glibc archives (arm64)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and test
+        run: make all check
+      - name: Build archives
+        run: |
+          mkdir dist
+          version=$(cat VERSION)
+          scripts/make-release-archive.sh source \
+            "dist/qsee-supplicant-$version.tar.gz"
+          scripts/make-release-archive.sh binary glibc \
+            "dist/qsee-supplicant-$version-linux-aarch64-glibc.tar.gz"
+      - name: Inspect archives
+        run: |
+          readelf -l qsee-supplicant | grep -F '/lib/ld-linux-aarch64.so.1'
+          tar -tzf dist/*-glibc.tar.gz | grep -E '/usr/sbin/qsee-supplicant$'
+          tar -tzf dist/qsee-supplicant-$(cat VERSION).tar.gz | \
+            grep -E '/packaging/alpine/APKBUILD$'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: archives-glibc-arm64
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  apk-musl:
+    name: postmarketOS packages and musl archive (aarch64)
+    runs-on: ubuntu-24.04-arm
+    container: alpine:edge
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install packaging tools
+        run: apk add --no-cache alpine-sdk linux-headers sudo file
+      - name: Prepare package builder
+        run: |
+          adduser -D builder
+          addgroup builder abuild
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          sudo -u builder abuild-keygen -a -n
+      - name: Build packages and archive
+        run: |
+          sudo -u builder sh -c 'cd packaging/alpine && abuild -r'
+          sudo -u builder make clean all check
+          mkdir dist
+          find /home/builder/packages -type f -name '*.apk' -exec cp {} dist/ \;
+          chown builder:builder dist
+          sudo -u builder scripts/make-release-archive.sh binary musl \
+            "dist/qsee-supplicant-$(cat VERSION)-linux-aarch64-musl.tar.gz"
+      - name: Inspect packages and archive
+        run: |
+          test "$(find dist -name '*.apk' | wc -l)" -eq 3
+          file qsee-supplicant | grep -F 'ARM aarch64'
+          readelf -l qsee-supplicant | grep -F '/lib/ld-musl-aarch64.so.1'
+          tar -tzf dist/*-musl.tar.gz | grep -E '/usr/sbin/qsee-supplicant$'
+          apk info --allow-untrusted --contents dist/qsee-supplicant-*-r0.apk | \
+            grep -Fx 'usr/sbin/qsee-supplicant'
+          apk info --allow-untrusted --contents dist/qsee-supplicant-openrc-*.apk | \
+            grep -Fx 'etc/init.d/qsee-app-loader'
+          apk info --allow-untrusted --contents dist/qsee-supplicant-systemd-*.apk | \
+            grep -Fx 'usr/lib/systemd/system/qsee-app-loader@.service'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: apk-musl-aarch64
+          path: |
+            dist/*.apk
+            dist/*-musl.tar.gz
+          if-no-files-found: error
+
   release:
     name: GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [deb, rpm]
+    needs: [deb, rpm, glibc-archives, apk-musl]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
