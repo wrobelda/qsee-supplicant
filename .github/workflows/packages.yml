@@ -118,6 +118,7 @@ jobs:
               adduser -D -u "$(stat -c %u /work)" builder
               addgroup builder abuild
               su builder -c "abuild-keygen -a -n"
+              cp /home/builder/.config/abuild/*.rsa.pub /etc/apk/keys/
               su builder -c "cd packaging/alpine && abuild -r"
               find /home/builder/packages -type f -name "*.apk" \
                 -exec cp {} /work/dist/ \;
@@ -127,7 +128,7 @@ jobs:
             '
       - name: Inspect packages and archive
         run: |
-          test "$(find dist -name '*.apk' | wc -l)" -eq 3
+          test "$(find dist -name '*.apk' | wc -l)" -eq 4
           file qsee-supplicant | grep -F 'ARM aarch64'
           readelf -l qsee-supplicant | grep -F '/lib/ld-musl-aarch64.so.1'
           tar -tzf dist/*-musl.tar.gz | grep -E '/usr/sbin/qsee-supplicant$'

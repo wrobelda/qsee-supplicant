@@ -7,7 +7,7 @@ url="https://github.com/wrobelda/qsee-supplicant"
 arch="all"
 license="BSD-2-Clause AND BSD-3-Clause-Clear"
 makedepends="linux-headers"
-subpackages="$pkgname-openrc $pkgname-systemd:systemd"
+subpackages="$pkgname-doc $pkgname-openrc $pkgname-systemd:systemd"
 options="!checkroot"
 builddir="$startdir/../.."
 
