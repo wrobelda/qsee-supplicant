@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "qsee_supplicant.h"
+#include "qsee_protocol.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -9,13 +10,6 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
-#define FS_PATH 4u
-#define FS_PATH_SIZE 256u
-#define FS_ARG 8u
-#define FS_WRITE_COUNT 20008u
-#define FS_REPLY_NREAD 20004u
-#define FS_REPLY_MAX 20000u
 
 struct fs_handle {
 	int protocol_fd;
@@ -27,17 +21,19 @@ static struct fs_handle *handles;
 static int next_handle = 3;
 static int last_error;
 
-static uint32_t get32(const uint8_t *p) { uint32_t v; memcpy(&v, p, 4); return v; }
-static void put32(uint8_t *p, uint32_t v) { memcpy(p, &v, 4); }
-
-static int reply(uint8_t *b, uint32_t op, int32_t result)
+static int reply(void *buffer, uint32_t command, int32_t result)
 {
-	put32(b, op); put32(b + 4, (uint32_t)result); return 0;
+	struct qs_fs_response *response = buffer;
+
+	response->command = command;
+	response->result = result;
+	return 0;
 }
 
-static int fail(uint8_t *b, uint32_t op)
+static int fail(void *buffer, uint32_t command)
 {
-	last_error = errno; return reply(b, op, -1);
+	last_error = errno;
+	return reply(buffer, command, -1);
 }
 
 static struct fs_handle *lookup(int id)
@@ -77,82 +73,155 @@ void qs_fs_reset(void)
 	last_error = 0;
 }
 
-static int normalize(uint8_t *b, char *path, size_t size)
+static int normalize(const char *input, char *path, size_t size)
 {
-	return qs_normalize_path((char *)b + FS_PATH, FS_PATH_SIZE, path, size);
+	return qs_normalize_path(input, QS_PROTOCOL_NAME_SIZE, path, size);
 }
 
 int qs_fs_dispatch(struct qs_store *s, void *buffer, size_t size)
 {
-	uint8_t *b = buffer; uint32_t op, count, flags; int id, fd, rc; ssize_t n;
-	char path[512], path2[512], leaf[256], leaf2[256]; int parent = -1, parent2 = -1; struct fs_handle *h;
-	if (!s || !b || size < QS_FS_BUFFER_SIZE) return -EINVAL;
-	op = get32(b);
-	switch (op) {
-	case 0x202: /* open */
-		if (normalize(b, path, sizeof(path))) return fail(b, op);
-		flags = get32(b + 260);
-		if (qs_open_parent(s, path, (flags & O_CREAT) != 0, &parent, leaf, sizeof(leaf))) return fail(b, op);
+	struct qs_fs_path_request *path_request = buffer;
+	struct qs_fs_open_request *open_request = buffer;
+	struct qs_fs_create_request *create_request = buffer;
+	struct qs_fs_fd_request *fd_request = buffer;
+	struct qs_fs_read_request *read_request = buffer;
+	struct qs_fs_read_response *read_response = buffer;
+	struct qs_fs_write_request *write_request = buffer;
+	struct qs_fs_lseek_request *lseek_request = buffer;
+	struct qs_fs_mkdir_request *mkdir_request = buffer;
+	struct qs_fs_rename_request *rename_request = buffer;
+	struct fs_handle *h;
+	uint32_t command, count, flags;
+	char path[512], path2[512], leaf[256], leaf2[256];
+	int id, fd, rc, parent = -1, parent2 = -1;
+	ssize_t n;
+
+	if (!s || !buffer || size < QS_FS_BUFFER_SIZE)
+		return -EINVAL;
+	command = path_request->command;
+	switch (command) {
+	case QS_FS_OPEN:
+		if (normalize(open_request->pathname, path, sizeof(path)))
+			return fail(buffer, command);
+		flags = (uint32_t)open_request->flags;
+		if (qs_open_parent(s, path, (flags & O_CREAT) != 0,
+				   &parent, leaf, sizeof(leaf)))
+			return fail(buffer, command);
 		fd = openat(parent, leaf, (int)flags | O_CLOEXEC | O_NOFOLLOW,
 			    s->file_mode);
-		close(parent); parent = -1;
-		if (fd < 0) return fail(b, op);
-		id = add_handle(fd); if (id < 0) { close(fd); return fail(b, op); }
-		return reply(b, op, id);
-	case 0x206: /* creat */
-		if (normalize(b, path, sizeof(path)) || qs_open_parent(s, path, true, &parent, leaf, sizeof(leaf))) return fail(b, op);
+		close(parent);
+		if (fd < 0)
+			return fail(buffer, command);
+		id = add_handle(fd);
+		if (id < 0) {
+			close(fd);
+			return fail(buffer, command);
+		}
+		return reply(buffer, command, id);
+	case QS_FS_CREAT:
+		if (normalize(create_request->pathname, path, sizeof(path)) ||
+		    qs_open_parent(s, path, true, &parent, leaf, sizeof(leaf)))
+			return fail(buffer, command);
 		fd = openat(parent, leaf, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW,
-			    get32(b + 260) & s->file_mode);
-		close(parent); parent = -1;
-		if (fd < 0) return fail(b, op);
-		id = add_handle(fd); if (id < 0) { close(fd); return fail(b, op); }
-		return reply(b, op, id);
-	case 0x207: /* read */
-		h = lookup((int)get32(b + 4)); if (!h) return fail(b, op);
-		count = get32(b + FS_ARG); if (count > FS_REPLY_MAX) count = FS_REPLY_MAX;
-		n = read(h->host_fd, b + 4, count); if (n < 0) last_error = errno;
-		put32(b, op); put32(b + FS_REPLY_NREAD, (uint32_t)n); return 0;
-	case 0x208: /* write */
-		h = lookup((int)get32(b + 4)); if (!h) return fail(b, op);
-		count = get32(b + FS_WRITE_COUNT); if (count > FS_REPLY_MAX) { errno = EINVAL; return fail(b, op); }
-		n = write(h->host_fd, b + FS_ARG, count); if (n < 0) return fail(b, op);
-		return reply(b, op, (int32_t)n);
-	case 0x209: return close_handle((int)get32(b + 4)) ? fail(b, op) : reply(b, op, 0);
-	case 0x20a:
-		h = lookup((int)get32(b + 4)); if (!h) return fail(b, op);
-		n = lseek(h->host_fd, (int32_t)get32(b + 8), (int)get32(b + 12));
-		return n < 0 ? fail(b, op) : reply(b, op, (int32_t)n);
-	case 0x20c: case 0x213:
-		if (normalize(b, path, sizeof(path))) return fail(b, op);
-		if (qs_open_parent(s, path, false, &parent, leaf, sizeof(leaf))) return fail(b, op);
-		rc = unlinkat(parent, leaf, 0); close(parent); return rc ? fail(b, op) : reply(b, op, 0);
-	case 0x20d:
-		if (normalize(b, path, sizeof(path))) return fail(b, op);
-		if (qs_open_parent(s, path, false, &parent, leaf, sizeof(leaf))) return fail(b, op);
-		rc = unlinkat(parent, leaf, AT_REMOVEDIR); close(parent); return rc ? fail(b, op) : reply(b, op, 0);
-	case 0x210:
-		if (normalize(b, path, sizeof(path)) || qs_open_parent(s, path, true, &parent, leaf, sizeof(leaf))) return fail(b, op);
-		rc = mkdirat(parent, leaf, get32(b + 260) & s->dir_mode); close(parent);
-		if (rc && errno == EEXIST) rc = 0;
-		return rc ? fail(b, op) : reply(b, op, 0);
-	case 0x216:
-		h = lookup((int)get32(b + 4)); if (!h) return fail(b, op);
-		return fsync(h->host_fd) ? fail(b, op) : reply(b, op, 0);
-	case 0x217:
-		if (normalize(b, path, sizeof(path)) ||
-		    qs_normalize_path((char *)b + 260, FS_PATH_SIZE, path2, sizeof(path2)) ||
+			    create_request->mode & s->file_mode);
+		close(parent);
+		if (fd < 0)
+			return fail(buffer, command);
+		id = add_handle(fd);
+		if (id < 0) {
+			close(fd);
+			return fail(buffer, command);
+		}
+		return reply(buffer, command, id);
+	case QS_FS_READ:
+		h = lookup(read_request->fd);
+		if (!h)
+			return fail(buffer, command);
+		count = read_request->count;
+		if (count > sizeof(read_response->data))
+			count = sizeof(read_response->data);
+		n = read(h->host_fd, read_response->data, count);
+		if (n < 0)
+			last_error = errno;
+		read_response->command = command;
+		read_response->result = (int32_t)n;
+		return 0;
+	case QS_FS_WRITE:
+		h = lookup(write_request->fd);
+		if (!h)
+			return fail(buffer, command);
+		count = write_request->count;
+		if (count > sizeof(write_request->data)) {
+			errno = EINVAL;
+			return fail(buffer, command);
+		}
+		n = write(h->host_fd, write_request->data, count);
+		if (n < 0)
+			return fail(buffer, command);
+		return reply(buffer, command, (int32_t)n);
+	case QS_FS_CLOSE:
+		return close_handle(fd_request->fd) ?
+		       fail(buffer, command) : reply(buffer, command, 0);
+	case QS_FS_LSEEK:
+		h = lookup(lseek_request->fd);
+		if (!h)
+			return fail(buffer, command);
+		n = lseek(h->host_fd, lseek_request->offset, lseek_request->whence);
+		return n < 0 ? fail(buffer, command) :
+		       reply(buffer, command, (int32_t)n);
+	case QS_FS_UNLINK:
+	case QS_FS_REMOVE:
+		if (normalize(path_request->pathname, path, sizeof(path)) ||
 		    qs_open_parent(s, path, false, &parent, leaf, sizeof(leaf)))
-			return fail(b, op);
+			return fail(buffer, command);
+		rc = unlinkat(parent, leaf, 0);
+		close(parent);
+		return rc ? fail(buffer, command) : reply(buffer, command, 0);
+	case QS_FS_RMDIR:
+		if (normalize(path_request->pathname, path, sizeof(path)) ||
+		    qs_open_parent(s, path, false, &parent, leaf, sizeof(leaf)))
+			return fail(buffer, command);
+		rc = unlinkat(parent, leaf, AT_REMOVEDIR);
+		close(parent);
+		return rc ? fail(buffer, command) : reply(buffer, command, 0);
+	case QS_FS_MKDIR:
+		if (normalize(mkdir_request->pathname, path, sizeof(path)) ||
+		    qs_open_parent(s, path, true, &parent, leaf, sizeof(leaf)))
+			return fail(buffer, command);
+		rc = mkdirat(parent, leaf, mkdir_request->mode & s->dir_mode);
+		close(parent);
+		if (rc && errno == EEXIST)
+			rc = 0;
+		return rc ? fail(buffer, command) : reply(buffer, command, 0);
+	case QS_FS_SYNC:
+		h = lookup(fd_request->fd);
+		if (!h)
+			return fail(buffer, command);
+		return fsync(h->host_fd) ? fail(buffer, command) :
+		       reply(buffer, command, 0);
+	case QS_FS_RENAME:
+		if (normalize(rename_request->old_filename, path, sizeof(path)) ||
+		    qs_normalize_path(rename_request->new_filename,
+				      sizeof(rename_request->new_filename),
+				      path2, sizeof(path2)) ||
+		    qs_open_parent(s, path, false, &parent, leaf, sizeof(leaf)))
+			return fail(buffer, command);
 		if (qs_open_parent(s, path2, true, &parent2, leaf2, sizeof(leaf2))) {
 			rc = errno;
 			close(parent);
 			errno = rc;
-			return fail(b, op);
+			return fail(buffer, command);
 		}
-		rc = renameat(parent, leaf, parent2, leaf2); close(parent); close(parent2);
-		return rc ? fail(b, op) : reply(b, op, 0);
-	case 0x21c: return reply(b, op, last_error);
-	case 0x21d: return reply(b, op, 0);
-	default: errno = ENOSYS; return fail(b, op);
+		rc = renameat(parent, leaf, parent2, leaf2);
+		close(parent);
+		close(parent2);
+		return rc ? fail(buffer, command) : reply(buffer, command, 0);
+	case QS_FS_GET_ERRNO:
+		return reply(buffer, command, last_error);
+	case QS_FS_END:
+		return reply(buffer, command, 0);
+	default:
+		errno = ENOSYS;
+		return fail(buffer, command);
 	}
 }

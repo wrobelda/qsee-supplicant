@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "qsee_supplicant.h"
+#include "qsee_protocol.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -10,27 +11,6 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
-
-#define GP_NAME_OFF 4u
-#define GP_NAME_SIZE 256u
-#define GP_OFFSET_OFF 0x104u
-#define GP_LENGTH_OFF 0x108u
-#define GP_BACKUP_OFF 0x10cu
-#define GP_DATA_OFF 0x110u
-#define GP_REPLY_DATA_OFF 12u
-#define GP_READ_MAX 512000u
-
-static uint32_t get_u32(const uint8_t *p)
-{
-	uint32_t value;
-	memcpy(&value, p, sizeof(value));
-	return value;
-}
-
-static void put_u32(uint8_t *p, uint32_t value)
-{
-	memcpy(p, &value, sizeof(value));
-}
 
 static int open_beneath(int dirfd, const char *path, int flags, mode_t mode)
 {
@@ -134,63 +114,75 @@ out:
 	return rc;
 }
 
-static void gp_reply(uint8_t *buf, uint32_t op, int error, uint32_t count)
+static void gp_reply(void *buffer, uint32_t command, int error, uint32_t count)
 {
-	put_u32(buf, op);
-	put_u32(buf + 4, (uint32_t)error);
-	put_u32(buf + 8, count);
+	struct qs_gpfs_io_response *response = buffer;
+
+	response->command = command;
+	response->error = error;
+	response->count = count;
 }
 
 int qs_gpfs_dispatch(struct qs_store *store, void *buffer, size_t size)
 {
-	uint8_t *buf = buffer;
+	struct qs_gpfs_path_request *path_request = buffer;
+	struct qs_gpfs_read_request *read_request = buffer;
+	struct qs_gpfs_write_request *write_request = buffer;
+	struct qs_gpfs_rename_request *rename_request = buffer;
+	struct qs_gpfs_io_response *io_response = buffer;
+	struct qs_gpfs_version_response *version_response = buffer;
 	char path[512], path2[512];
-	uint32_t op, length;
+	uint32_t command, length;
 	int32_t offset;
 	int fd = -1, parent = -1, rc = 0, saved = 0;
 	ssize_t n;
 	char leaf[256], leaf2[256];
 
-	if (!store || !buf || size < GP_DATA_OFF)
+	if (!store || !buffer ||
+	    size < offsetof(struct qs_gpfs_write_request, data))
 		return -EINVAL;
-	op = get_u32(buf);
-	if (op > 12) {
-		gp_reply(buf, op, EINVAL, 0);
+	command = path_request->command;
+	if (command > QS_GPFS_VERSION) {
+		gp_reply(buffer, command, EINVAL, 0);
 		return 0;
 	}
-	if (op == 12) {
-		gp_reply(buf, op, 2, 0);
+	if (command == QS_GPFS_VERSION) {
+		version_response->command = command;
+		version_response->version = 2;
+		version_response->error = 0;
 		return 0;
 	}
-	if (op % 4 == 3 && size < GP_OFFSET_OFF + GP_NAME_SIZE) {
-		gp_reply(buf, op, EINVAL, 0);
+	if (command % 4 == 3 && size < sizeof(*rename_request)) {
+		gp_reply(buffer, command, EINVAL, 0);
 		return 0;
 	}
-	if (qs_normalize_path((char *)buf + GP_NAME_OFF, GP_NAME_SIZE,
+	if (qs_normalize_path(path_request->pathname, sizeof(path_request->pathname),
 			      path, sizeof(path))) {
-		gp_reply(buf, op, errno, 0);
+		gp_reply(buffer, command, errno, 0);
 		return 0;
 	}
 	offset = 0;
 	length = 0;
-	if (op % 4 == 0 || op % 4 == 1) {
-		offset = (int32_t)get_u32(buf + GP_OFFSET_OFF);
-		length = get_u32(buf + GP_LENGTH_OFF);
-		if (offset < 0 || length > GP_READ_MAX ||
-		    (op % 4 == 0 && (size_t)length > size - GP_REPLY_DATA_OFF) ||
-		    (op % 4 == 1 && (size_t)length > size - GP_DATA_OFF)) {
-			gp_reply(buf, op, EINVAL, 0);
+	if (command % 4 == 0 || command % 4 == 1) {
+		offset = read_request->offset;
+		length = read_request->count;
+		if (offset < 0 || length > QS_GPFS_DATA_SIZE ||
+		    (command % 4 == 0 &&
+		     (size_t)length > size - offsetof(struct qs_gpfs_io_response, data)) ||
+		    (command % 4 == 1 &&
+		     (size_t)length > size - offsetof(struct qs_gpfs_write_request, data))) {
+			gp_reply(buffer, command, EINVAL, 0);
 			return 0;
 		}
 	}
-	switch (op % 4) {
+	switch (command % 4) {
 	case 0:
 		fd = open_beneath(store->root_fd, path, O_RDONLY, 0);
 		if (fd < 0) {
 			saved = errno;
 			break;
 		}
-		n = pread(fd, buf + GP_REPLY_DATA_OFF, length, offset);
+		n = pread(fd, io_response->data, length, offset);
 		if (n < 0)
 			saved = errno;
 		else
@@ -198,12 +190,12 @@ int qs_gpfs_dispatch(struct qs_store *store, void *buffer, size_t size)
 		break;
 	case 1:
 		if (offset == 0) {
-			rc = atomic_write(store, path, buf + GP_DATA_OFF, length,
-					  get_u32(buf + GP_BACKUP_OFF) != 0);
+			rc = atomic_write(store, path, write_request->data, length,
+					  write_request->backup != 0);
 		} else {
 			fd = open_beneath(store->root_fd, path, O_WRONLY, 0);
 			if (fd >= 0) {
-				n = pwrite(fd, buf + GP_DATA_OFF, length, offset);
+				n = pwrite(fd, write_request->data, length, offset);
 				rc = n == (ssize_t)length && !fsync(fd) ? 0 : -1;
 			} else {
 				rc = -1;
@@ -223,7 +215,7 @@ int qs_gpfs_dispatch(struct qs_store *store, void *buffer, size_t size)
 			saved = errno;
 		break;
 	case 3:
-		if (qs_normalize_path((char *)buf + GP_OFFSET_OFF, GP_NAME_SIZE,
+		if (qs_normalize_path(rename_request->to, sizeof(rename_request->to),
 				      path2, sizeof(path2))) {
 			saved = errno;
 			break;
@@ -246,6 +238,6 @@ int qs_gpfs_dispatch(struct qs_store *store, void *buffer, size_t size)
 		close(fd);
 	if (parent >= 0)
 		close(parent);
-	gp_reply(buf, op, saved, saved ? 0 : length);
+	gp_reply(buffer, command, saved, saved ? 0 : length);
 	return 0;
 }

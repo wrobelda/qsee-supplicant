@@ -244,3 +244,17 @@ lifecycle work remains:
   applications become available or disappear. Consumers that support dynamic
   availability should not have to infer application state from loader process
   state.
+
+## License
+
+Original qsee-supplicant code is licensed under the BSD 2-Clause License in
+[`LICENSE`](LICENSE).
+
+[`include/qsee_protocol.h`](include/qsee_protocol.h) contains message-layout
+definitions derived from Qualcomm MinkIPC and remains licensed under the BSD
+3-Clause Clear License. Its license text is in
+[`LICENSES/BSD-3-Clause-Clear.txt`](LICENSES/BSD-3-Clause-Clear.txt).
+
+The handle database is adapted from OP-TEE `tee-supplicant`. Its Linaro
+copyright notice and BSD 2-Clause license are retained in the corresponding
+source files.
