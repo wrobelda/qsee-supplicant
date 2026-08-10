@@ -12,7 +12,7 @@ jobs:
     name: Debian package (arm64)
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install packaging tools
         run: |
           sudo apt-get update
@@ -33,7 +33,7 @@ jobs:
           lintian --fail-on error dist/*.deb
           dpkg-deb --fsys-tarfile dist/*.deb | tar -tf - | grep -Fx './usr/sbin/qsee-supplicant'
           dpkg-deb --fsys-tarfile dist/*.deb | tar -tf - | grep -Fx './usr/lib/systemd/system/qsee-app-loader@.service'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: deb-arm64
           path: dist/*.deb
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     container: fedora:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install packaging tools
         run: dnf install -y gcc make rpm-build rpmdevtools rpmlint systemd-rpm-macros tar gzip
       - name: Verify package version
@@ -71,7 +71,7 @@ jobs:
           rpmlint packaging/rpm/qsee-supplicant.spec dist/*.rpm
           rpm -qlp dist/*.rpm | grep -Fx '/usr/bin/qsee-supplicant'
           rpm -qlp dist/*.rpm | grep -Fx '/usr/lib/systemd/system/qsee-app-loader@.service'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: rpm-aarch64
           path: dist/*.rpm
@@ -85,13 +85,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           cd dist
           sha256sum ./* > SHA256SUMS
