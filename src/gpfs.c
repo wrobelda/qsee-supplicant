@@ -46,54 +46,6 @@ static int open_beneath(int dirfd, const char *path, int flags, mode_t mode)
 	return syscall(SYS_openat2, dirfd, path, &how, sizeof(how));
 }
 
-static int parent_and_leaf(struct qs_store *store, const char *path,
-			   bool create, int *parent, char *leaf, size_t leaf_size)
-{
-	char work[512], *save = NULL, *part, *next;
-	int current = -1, child;
-
-	if (strlen(path) >= sizeof(work)) {
-		errno = ENAMETOOLONG;
-		return -1;
-	}
-	strcpy(work, path);
-	current = dup(store->root_fd);
-	if (current < 0)
-		return -1;
-	part = strtok_r(work, "/", &save);
-	if (!part)
-		goto bad;
-	for (;;) {
-		next = strtok_r(NULL, "/", &save);
-		if (!next)
-			break;
-		child = openat(current, part,
-			       O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-		if (child < 0 && create && errno == ENOENT) {
-			if (mkdirat(current, part, store->dir_mode) && errno != EEXIST)
-				goto bad;
-			child = openat(current, part,
-				       O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-		}
-		if (child < 0)
-			goto bad;
-		close(current);
-		current = child;
-		part = next;
-	}
-	if (strlen(part) + 1 > leaf_size) {
-		errno = ENAMETOOLONG;
-		goto bad;
-	}
-	strcpy(leaf, part);
-	*parent = current;
-	return 0;
-bad:
-	if (current >= 0)
-		close(current);
-	return -1;
-}
-
 static int copy_file_at(int dirfd, const char *source, const char *dest,
 			mode_t mode)
 {
@@ -146,7 +98,7 @@ static int atomic_write(struct qs_store *store, const char *path,
 	int parent = -1, fd = -1, rc = -1;
 	size_t done = 0;
 
-	if (parent_and_leaf(store, path, true, &parent, leaf, sizeof(leaf)))
+	if (qs_open_parent(store, path, true, &parent, leaf, sizeof(leaf)))
 		return -1;
 	if (backup) {
 		if (snprintf(bak, sizeof(bak), "%s.bak", leaf) >= (int)sizeof(bak)) {
@@ -260,7 +212,7 @@ int qs_gpfs_dispatch(struct qs_store *store, void *buffer, size_t size)
 			saved = errno ? errno : EIO;
 		break;
 	case 2:
-		if (parent_and_leaf(store, path, false, &parent, leaf, sizeof(leaf))) {
+		if (qs_open_parent(store, path, false, &parent, leaf, sizeof(leaf))) {
 			saved = errno;
 			break;
 		}
@@ -275,9 +227,15 @@ int qs_gpfs_dispatch(struct qs_store *store, void *buffer, size_t size)
 			saved = errno;
 			break;
 		}
-		if (parent_and_leaf(store, path, false, &parent, leaf, sizeof(leaf)) ||
-		    parent_and_leaf(store, path2, true, &fd, leaf2, sizeof(leaf2)) ||
-		    renameat(parent, leaf, fd, leaf2))
+		if (qs_open_parent(store, path, false, &parent, leaf, sizeof(leaf))) {
+			saved = errno;
+			break;
+		}
+		if (qs_open_parent(store, path2, true, &fd, leaf2, sizeof(leaf2))) {
+			saved = errno;
+			break;
+		}
+		if (renameat(parent, leaf, fd, leaf2))
 			saved = errno;
 		else if (fsync(parent) || fsync(fd))
 			saved = errno;
