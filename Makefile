@@ -19,19 +19,19 @@ DESTDIR ?=
 all: qsee-supplicant qsee-app-loader
 
 qsee-supplicant: src/main.c src/transport_qseecom.c $(COMMON) $(NOTIFY)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(THREAD_LIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(THREAD_LIBS) $(LDLIBS)
 
 qsee-app-loader: src/app_loader.c $(APP_ACQUIRE) $(NOTIFY)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 test-protocol: tests/test_protocol.c $(COMMON)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(THREAD_LIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(THREAD_LIBS) $(LDLIBS)
 
 test-notify: tests/test_notify.c $(NOTIFY)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 test-app-acquire: tests/test_app_acquire.c $(APP_ACQUIRE)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 check: test-protocol test-notify test-app-acquire
 	./test-protocol
