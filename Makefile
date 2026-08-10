@@ -3,8 +3,9 @@ CPPFLAGS += -D_GNU_SOURCE -Iinclude
 CFLAGS ?= -O2 -g
 CFLAGS += -std=c11 -Wall -Wextra -Werror
 
-COMMON = src/path.c src/services.c src/fs.c src/gpfs.c
+COMMON = src/path.c src/services.c src/handle_db.c src/fs.c src/gpfs.c
 NOTIFY = src/notify.c
+THREAD_LIBS = -pthread
 
 PREFIX ?= /usr
 SBINDIR ?= $(PREFIX)/sbin
@@ -17,13 +18,13 @@ DESTDIR ?=
 all: qsee-supplicant qsee-app-loader
 
 qsee-supplicant: src/main.c src/transport_qseecom.c $(COMMON) $(NOTIFY)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(THREAD_LIBS)
 
 qsee-app-loader: src/app_loader.c $(NOTIFY)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^
 
 test-protocol: tests/test_protocol.c $(COMMON)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(THREAD_LIBS)
 
 test-notify: tests/test_notify.c $(NOTIFY)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^

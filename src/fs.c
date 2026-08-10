@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
-#include "qsee_supplicant.h"
+#include "handle_db.h"
 #include "qsee_protocol.h"
+#include "qsee_supplicant.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -12,14 +13,13 @@
 #include <unistd.h>
 
 struct fs_handle {
-	int protocol_fd;
 	int host_fd;
-	struct fs_handle *next;
 };
 
-static struct fs_handle *handles;
-static int next_handle = 3;
+static struct handle_db handles = HANDLE_DB_INITIALIZER;
 static int last_error;
+
+#define FS_HANDLE_BASE 3
 
 static int reply(void *buffer, uint32_t command, int32_t result)
 {
@@ -38,38 +38,65 @@ static int fail(void *buffer, uint32_t command)
 
 static struct fs_handle *lookup(int id)
 {
-	struct fs_handle *h;
-	for (h = handles; h; h = h->next) if (h->protocol_fd == id) return h;
-	errno = EBADF; return NULL;
+	struct fs_handle *handle;
+
+	if (id < FS_HANDLE_BASE)
+		handle = NULL;
+	else
+		handle = handle_lookup(&handles, id - FS_HANDLE_BASE);
+	if (!handle)
+		errno = EBADF;
+	return handle;
 }
 
 static int add_handle(int fd)
 {
-	struct fs_handle *h = calloc(1, sizeof(*h));
-	if (!h) return -1;
-	h->protocol_fd = next_handle++; h->host_fd = fd; h->next = handles; handles = h;
-	return h->protocol_fd;
+	struct fs_handle *handle;
+	int id;
+
+	handle = malloc(sizeof(*handle));
+	if (!handle)
+		return -1;
+	handle->host_fd = fd;
+	id = handle_get(&handles, handle);
+	if (id < 0) {
+		free(handle);
+		return -1;
+	}
+	return id + FS_HANDLE_BASE;
 }
 
 static int close_handle(int id)
 {
-	struct fs_handle **p = &handles, *h;
-	while ((h = *p)) {
-		if (h->protocol_fd == id) { *p = h->next; close(h->host_fd); free(h); return 0; }
-		p = &h->next;
+	struct fs_handle *handle;
+
+	if (id < FS_HANDLE_BASE)
+		handle = NULL;
+	else
+		handle = handle_put(&handles, id - FS_HANDLE_BASE);
+	if (!handle) {
+		errno = EBADF;
+		return -1;
 	}
-	errno = EBADF; return -1;
+	close(handle->host_fd);
+	free(handle);
+	return 0;
+}
+
+static void close_reset_handle(int id, void *ptr, void *arg)
+{
+	struct fs_handle *handle = ptr;
+
+	(void)id;
+	(void)arg;
+	close(handle->host_fd);
+	free(handle);
 }
 
 void qs_fs_reset(void)
 {
-	while (handles) {
-		struct fs_handle *next = handles->next;
-		close(handles->host_fd);
-		free(handles);
-		handles = next;
-	}
-	next_handle = 3;
+	handle_foreach_put(&handles, close_reset_handle, NULL);
+	handle_db_destroy(&handles);
 	last_error = 0;
 }
 
