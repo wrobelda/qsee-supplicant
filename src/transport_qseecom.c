@@ -63,7 +63,8 @@ static int serve_qseecom(struct qs_store *store, const struct qs_service *servic
 			 size_t count, volatile sig_atomic_t *stop,
 			 void (*ready)(void *data), void *ready_data)
 {
-	struct registered_service registered[16] = {}; size_t i; int fd, rc = -1;
+	struct registered_service registered[16] = {}; size_t i;
+	int fd, rc = -1, saved_errno;
 	if (count > 16) { errno = E2BIG; return -1; }
 	fd = open_qseecom_priv(); if (fd < 0) return -1;
 	for (i = 0; i < count; i++) {
@@ -96,11 +97,16 @@ static int serve_qseecom(struct qs_store *store, const struct qs_service *servic
 		if (ioctl(fd, TEE_IOC_SUPPL_SEND, &data)) goto out;
 	}
 out:
+	saved_errno = errno;
 	for (i = 0; i < count; i++) if (services[i].reset)
 		services[i].reset();
 	for (i = 0; i < count; i++) if (registered[i].memory.address)
 		munmap(registered[i].memory.address, registered[i].memory.size);
-	close(fd); return rc;
+	close(fd);
+	if (*stop)
+		return 0;
+	errno = saved_errno;
+	return rc;
 }
 
 const struct qs_transport qs_qseecom_transport = { .name = "qseecom", .serve = serve_qseecom };
