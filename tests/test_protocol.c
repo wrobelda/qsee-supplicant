@@ -41,6 +41,7 @@ int main(void)
 	assert(!qs_store_open(&store, root, 0600, 0700));
 	assert(!qs_normalize_path("/data/vendor/fpdump/a.so", 256, out, sizeof(out)));
 	assert(!strcmp(out, "data/vendor/fpdump/a.so"));
+	errno = 0; assert(qs_normalize_path("data/vendor/", 256, out, sizeof(out)) < 0 && errno == EPERM);
 	errno = 0; assert(qs_normalize_path("../../etc/shadow", 256, out, sizeof(out)) < 0 && errno == EPERM);
 
 	/* Listener 10's observed open/write/seek/read/close and errno protocol. */
