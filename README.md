@@ -216,9 +216,18 @@ postmarketOS. Install the package appropriate for the operating system:
 ```sh
 sudo apt install ./qsee-supplicant_0.1.1-1_arm64.deb
 sudo dnf install ./qsee-supplicant-0.1.1-1.*.aarch64.rpm
+
+# postmarketOS with systemd
 sudo apk add --allow-untrusted \
   ./qsee-supplicant-0.1.1-r0.apk \
-  ./qsee-supplicant-systemd-0.1.1-r0.apk
+  ./qsee-supplicant-systemd-0.1.1-r0.apk \
+  ./qsee-supplicant-doc-0.1.1-r0.apk
+
+# postmarketOS with OpenRC
+sudo apk add --allow-untrusted \
+  ./qsee-supplicant-0.1.1-r0.apk \
+  ./qsee-supplicant-openrc-0.1.1-r0.apk \
+  ./qsee-supplicant-doc-0.1.1-r0.apk
 ```
 
 The APK build separates the programs from service-manager integration. Install
