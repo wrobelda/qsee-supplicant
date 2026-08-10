@@ -43,9 +43,13 @@ queue for each QSEECOM TEE device, not one queue for each TA.
 This project requires the QSEECOM TEE driver provided by
 [`goodix-fp-spi-linux`](https://github.com/wrobelda/goodix-fp-spi-linux).
 That driver implements QSEECOM through the Linux TEE subsystem and exposes the
-`/dev/teeprivN` device used by the supplicant and loader. The driver is not yet
-included in mainline Linux, so the running kernel must include the driver from
-that repository.
+paired `/dev/teeN` client and `/dev/teeprivN` privileged devices. Driver probe
+fails and unregisters both if either device cannot be registered. The loader
+requires both: it attaches through the client device and loads through the
+privileged device. A privileged-only setup is incomplete and is rejected rather
+than used to load a TA that ordinary clients cannot access. The driver is not
+yet included in mainline Linux, so the running kernel must include the driver
+from that repository.
 
 As explained in the overview, some TAs need operations that only the host
 operating system can provide, such as reading and writing files. They request
@@ -73,10 +77,10 @@ request-processing state or storage descriptors:
   the File System (FS) and GlobalPlatform File System (GPFS) listener services,
   processes their requests, and stores their files below the configured state
   directory.
-- `qsee-app-loader` loads one dynamic TA and keeps its kernel session open so
-  the TA remains loaded. One loader process is used for each TA that the system
-  needs to keep resident. The program takes the TA firmware name as its only
-  argument.
+- `qsee-app-loader` attaches to a resident dynamic TA or loads it when absent,
+  then keeps its kernel session open. One loader process is used for each TA
+  that the system needs to keep resident. The program takes the TA firmware
+  name as its only argument.
 
 Together, these programs provide the listener-service and dynamic-TA lifetime
 functions normally handled by Qualcomm's `qseecomd` on Android.
@@ -102,6 +106,14 @@ the corresponding loader instance as a dependency. For example:
 Requires=qsee-app-loader@example-ta.service
 After=qsee-app-loader@example-ta.service
 ```
+
+The loader first tries to open an unprivileged session to the named TA. The
+QSEECOM TEE driver returns `ENOENT` when the named TA is not resident. Only that
+result causes the loader to use the privileged device. After any failed load,
+the loader retries the unprivileged session in case another process won the
+load race; if the retry also fails, the original load error is returned. This
+also lets a loader restart and attach while another client session keeps the TA
+resident.
 
 The supplied units do not name TA consumers because application selection and
 consumer policy are system-specific. A consumer that supports dynamic TA
@@ -233,13 +245,13 @@ systemctl enable --now qsee-app-loader@example-ta.service
 
 ## TODO
 
-Application loading and readiness reporting are functional. The following
-lifecycle work remains:
+Application acquisition and readiness reporting are functional. Lifecycle
+work is tracked here:
 
-- [ ] Make `qsee-app-loader` attach to an application that is already loaded before
-  attempting a privileged load. If loading races with another process, retry
-  the unprivileged attach. This allows a loader to restart while existing client
-  sessions keep the application resident.
+- [x] Attach to an application that is already resident before attempting a
+  privileged load. If another process wins the load race, retry the
+  unprivileged attachment. This allows a loader to restart while another client
+  session keeps the application resident.
 - [ ] Provide an operating-system interface for observing when named QSEECOM
   applications become available or disappear. Consumers that support dynamic
   availability should not have to infer application state from loader process
