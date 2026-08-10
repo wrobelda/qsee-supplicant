@@ -176,6 +176,7 @@ int qs_gpfs_dispatch(struct qs_store *store, void *buffer, size_t size)
 		offset = (int32_t)get_u32(buf + GP_OFFSET_OFF);
 		length = get_u32(buf + GP_LENGTH_OFF);
 		if (offset < 0 || length > GP_READ_MAX ||
+		    (op % 4 == 0 && (size_t)length > size - GP_REPLY_DATA_OFF) ||
 		    (op % 4 == 1 && (size_t)length > size - GP_DATA_OFF)) {
 			gp_reply(buf, op, EINVAL, 0);
 			return 0;

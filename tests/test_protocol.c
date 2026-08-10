@@ -105,6 +105,13 @@ int main(void)
 	snprintf(file, sizeof(file), "%s/data/vendor/fpdump/moved.so", root);
 	assert(!stat(file, &st) && st.st_size == 6);
 
+	/* A read reply must fit in the caller-provided listener buffer. */
+	memset(b, 0, 0x110); p32(b, 0);
+	strcpy((char *)b + 4, "/data/vendor/fpdump/moved.so");
+	p32(b + 0x108, 1024);
+	assert(!qs_gpfs_dispatch(&store, b, 0x110));
+	assert(u32(b + 4) == EINVAL);
+
 	memset(b, 0, QS_GPFS_BUFFER_SIZE); p32(b, 1); strcpy((char *)b + 4, "../escape");
 	p32(b + 0x108, 1); b[0x110] = 1; assert(!qs_gpfs_dispatch(&store, b, QS_GPFS_BUFFER_SIZE)); assert(u32(b + 4) == EPERM);
 	snprintf(file, sizeof(file), "%s/evil", root); assert(!symlink("/tmp", file));
