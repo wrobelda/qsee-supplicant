@@ -165,6 +165,10 @@ int qs_gpfs_dispatch(struct qs_store *store, void *buffer, size_t size)
 		gp_reply(buf, op, 2, 0);
 		return 0;
 	}
+	if (op % 4 == 3 && size < GP_OFFSET_OFF + GP_NAME_SIZE) {
+		gp_reply(buf, op, EINVAL, 0);
+		return 0;
+	}
 	if (qs_normalize_path((char *)buf + GP_NAME_OFF, GP_NAME_SIZE,
 			      path, sizeof(path))) {
 		gp_reply(buf, op, errno, 0);

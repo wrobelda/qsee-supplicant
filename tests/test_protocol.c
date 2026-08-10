@@ -33,6 +33,7 @@ int main(void)
 	char root[] = "/tmp/qsee-supp-test.XXXXXX", out[512], file[600];
 	struct qs_store store = { .root_fd = -1 };
 	uint8_t *b = calloc(1, QS_GPFS_BUFFER_SIZE);
+	uint8_t *small;
 	struct stat st;
 	size_t fd_count;
 	int handle;
@@ -111,6 +112,14 @@ int main(void)
 	p32(b + 0x108, 1024);
 	assert(!qs_gpfs_dispatch(&store, b, 0x110));
 	assert(u32(b + 4) == EINVAL);
+
+	/* Both fixed-size path fields of a rename request must fit. */
+	small = calloc(1, 0x110); assert(small);
+	p32(small, 3); strcpy((char *)small + 4, "rename-source");
+	memset(small + 0x104, 'x', 0x110 - 0x104);
+	assert(!qs_gpfs_dispatch(&store, small, 0x110));
+	assert(u32(small + 4) == EINVAL);
+	free(small);
 
 	memset(b, 0, QS_GPFS_BUFFER_SIZE); p32(b, 1); strcpy((char *)b + 4, "../escape");
 	p32(b + 0x108, 1); b[0x110] = 1; assert(!qs_gpfs_dispatch(&store, b, QS_GPFS_BUFFER_SIZE)); assert(u32(b + 4) == EPERM);
