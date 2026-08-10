@@ -44,7 +44,8 @@ extern const size_t qs_builtin_service_count;
 struct qs_transport {
 	const char *name;
 	int (*serve)(struct qs_store *store, const struct qs_service *services,
-		     size_t service_count, volatile sig_atomic_t *stop);
+		     size_t service_count, volatile sig_atomic_t *stop,
+		     void (*ready)(void *data), void *ready_data);
 };
 
 extern const struct qs_transport qs_qseecom_transport;

@@ -4,7 +4,9 @@ Documentation=file:///usr/share/doc/qsee-supplicant/README.md
 After=systemd-udev-settle.service
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+TimeoutStartSec=0
 StateDirectory=qsee-supplicant
 StateDirectoryMode=0700
 ExecStart=/usr/sbin/qsee-supplicant --state-dir /var/lib/qsee-supplicant

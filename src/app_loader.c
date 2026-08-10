@@ -10,6 +10,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include "notify.h"
+
 #define TEE_IMPL_ID_QSEECOM 5u
 #define APP_NAME_MAX 64u
 
@@ -101,6 +103,9 @@ int main(int argc, char **argv)
 
 	fprintf(stderr, "event=application_loaded app=%s session=%u\n",
 		argv[1], session->session);
+	if (qs_notify("READY=1\nSTATUS=Trusted application loaded") < 0)
+		fprintf(stderr, "event=notify_error app=%s errno=%d message=\"%s\"\n",
+			argv[1], errno, strerror(errno));
 	sigemptyset(&action.sa_mask);
 	sigaction(SIGINT, &action, NULL);
 	sigaction(SIGTERM, &action, NULL);

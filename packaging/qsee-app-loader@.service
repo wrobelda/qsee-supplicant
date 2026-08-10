@@ -3,9 +3,12 @@ Description=Hold Qualcomm TEE application %i loaded
 Documentation=file:///usr/share/doc/qsee-supplicant/README.md
 Wants=qsee-supplicant.service
 After=qsee-supplicant.service
+StartLimitIntervalSec=0
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+ExecStartPre=/usr/bin/systemctl --quiet is-active qsee-supplicant.service
 ExecStart=/usr/sbin/qsee-app-loader %i
 Restart=on-failure
 RestartSec=2s

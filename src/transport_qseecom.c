@@ -60,7 +60,8 @@ static int register_service(int fd, struct registered_service *registered)
 }
 
 static int serve_qseecom(struct qs_store *store, const struct qs_service *services,
-			 size_t count, volatile sig_atomic_t *stop)
+			 size_t count, volatile sig_atomic_t *stop,
+			 void (*ready)(void *data), void *ready_data)
 {
 	struct registered_service registered[16] = {}; size_t i; int fd, rc = -1;
 	if (count > 16) { errno = E2BIG; return -1; }
@@ -71,6 +72,8 @@ static int serve_qseecom(struct qs_store *store, const struct qs_service *servic
 		fprintf(stderr, "event=listener_registered transport=qseecom id=%u size=%zu\n",
 			services[i].id, services[i].buffer_size);
 	}
+	if (ready)
+		ready(ready_data);
 	while (!*stop) {
 		uint64_t recv_storage[(sizeof(struct tee_iocl_supp_recv_arg) +
 				  2 * sizeof(struct tee_ioctl_param) + 7) / 8] = {};

@@ -5,6 +5,7 @@ CFLAGS += -std=c11 -Wall -Wextra -Werror
 LDLIBS += -pthread
 
 COMMON = src/path.c src/services.c src/fs.c src/gpfs.c
+NOTIFY = src/notify.c
 
 PREFIX ?= /usr
 SBINDIR ?= $(PREFIX)/sbin
@@ -16,17 +17,21 @@ DESTDIR ?=
 .PHONY: all check clean install
 all: qsee-supplicant qsee-app-loader
 
-qsee-supplicant: src/main.c src/transport_qseecom.c $(COMMON)
+qsee-supplicant: src/main.c src/transport_qseecom.c $(COMMON) $(NOTIFY)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
-qsee-app-loader: src/app_loader.c
+qsee-app-loader: src/app_loader.c $(NOTIFY)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^
 
 test-protocol: tests/test_protocol.c $(COMMON)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
-check: test-protocol
+test-notify: tests/test_notify.c $(NOTIFY)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^
+
+check: test-protocol test-notify
 	./test-protocol
+	./test-notify
 
 install: qsee-supplicant qsee-app-loader
 	install -d $(DESTDIR)$(SBINDIR) $(DESTDIR)$(UNITDIR) $(DESTDIR)$(SYSCONFDIR)/init.d $(DESTDIR)$(DOCDIR)
@@ -38,4 +43,4 @@ install: qsee-supplicant qsee-app-loader
 	install -m 0644 README.md $(DESTDIR)$(DOCDIR)/README.md
 
 clean:
-	rm -f qsee-supplicant qsee-app-loader test-protocol
+	rm -f qsee-supplicant qsee-app-loader test-protocol test-notify
