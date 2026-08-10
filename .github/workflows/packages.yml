@@ -132,18 +132,12 @@ jobs:
           file qsee-supplicant | grep -F 'ARM aarch64'
           readelf -l qsee-supplicant | grep -F '/lib/ld-musl-aarch64.so.1'
           tar -tzf dist/*-musl.tar.gz | grep -E '/usr/sbin/qsee-supplicant$'
-          docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work alpine:edge \
-            sh -ec '
-              apk info --allow-untrusted --contents \
-                dist/qsee-supplicant-[0-9]*-r0.apk | \
-                grep -Fx usr/sbin/qsee-supplicant
-              apk info --allow-untrusted --contents \
-                dist/qsee-supplicant-openrc-*.apk | \
-                grep -Fx etc/init.d/qsee-app-loader
-              apk info --allow-untrusted --contents \
-                dist/qsee-supplicant-systemd-*.apk | \
-                grep -Fx usr/lib/systemd/system/qsee-app-loader@.service
-            '
+          tar --ignore-zeros -tzf dist/qsee-supplicant-[0-9]*-r0.apk | \
+            grep -E '^usr/sbin/qsee-supplicant$'
+          tar --ignore-zeros -tzf dist/qsee-supplicant-openrc-*.apk | \
+            grep -E '^etc/init.d/qsee-app-loader$'
+          tar --ignore-zeros -tzf dist/qsee-supplicant-systemd-*.apk | \
+            grep -E '^usr/lib/systemd/system/qsee-app-loader@.service$'
       - uses: actions/upload-artifact@v7
         with:
           name: apk-musl-aarch64
