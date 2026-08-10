@@ -4,7 +4,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/openat2.h>
-#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -20,8 +19,6 @@
 #define GP_DATA_OFF 0x110u
 #define GP_REPLY_DATA_OFF 12u
 #define GP_READ_MAX 512000u
-
-static pthread_mutex_t gpfs_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static uint32_t get_u32(const uint8_t *p)
 {
@@ -186,7 +183,6 @@ int qs_gpfs_dispatch(struct qs_store *store, void *buffer, size_t size)
 			return 0;
 		}
 	}
-	pthread_mutex_lock(&gpfs_lock);
 	switch (op % 4) {
 	case 0:
 		fd = open_beneath(store->root_fd, path, O_RDONLY, 0);
@@ -250,7 +246,6 @@ int qs_gpfs_dispatch(struct qs_store *store, void *buffer, size_t size)
 		close(fd);
 	if (parent >= 0)
 		close(parent);
-	pthread_mutex_unlock(&gpfs_lock);
 	gp_reply(buf, op, saved, saved ? 0 : length);
 	return 0;
 }

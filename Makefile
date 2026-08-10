@@ -2,7 +2,6 @@ CC ?= cc
 CPPFLAGS += -D_GNU_SOURCE -Iinclude
 CFLAGS ?= -O2 -g
 CFLAGS += -std=c11 -Wall -Wextra -Werror
-LDLIBS += -pthread
 
 COMMON = src/path.c src/services.c src/fs.c src/gpfs.c
 NOTIFY = src/notify.c
@@ -18,13 +17,13 @@ DESTDIR ?=
 all: qsee-supplicant qsee-app-loader
 
 qsee-supplicant: src/main.c src/transport_qseecom.c $(COMMON) $(NOTIFY)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^
 
 qsee-app-loader: src/app_loader.c $(NOTIFY)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^
 
 test-protocol: tests/test_protocol.c $(COMMON)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^
 
 test-notify: tests/test_notify.c $(NOTIFY)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^
