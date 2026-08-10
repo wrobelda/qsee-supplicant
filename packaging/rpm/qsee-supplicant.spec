@@ -27,8 +27,9 @@ Linux TEE subsystem.
 %make_build check
 
 %install
-%make_install PREFIX=%{_prefix} SBINDIR=%{_sbindir} UNITDIR=%{_unitdir} \
-              DOCDIR=%{_docdir}/%{name} install-bin install-systemd install-doc
+%{__make} DESTDIR=%{buildroot} PREFIX=%{_prefix} SBINDIR=%{_sbindir} \
+           UNITDIR=%{_unitdir} DOCDIR=%{_docdir}/%{name} \
+           install-bin install-systemd install-doc
 
 %post
 %systemd_post qsee-supplicant.service qsee-app-loader@.service

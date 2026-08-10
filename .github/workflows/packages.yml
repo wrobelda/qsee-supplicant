@@ -107,38 +107,42 @@ jobs:
   apk-musl:
     name: postmarketOS packages and musl archive (aarch64)
     runs-on: ubuntu-24.04-arm
-    container: alpine:edge
     steps:
       - uses: actions/checkout@v7
-      - name: Install packaging tools
-        run: apk add --no-cache alpine-sdk linux-headers sudo file
-      - name: Prepare package builder
-        run: |
-          adduser -D builder
-          addgroup builder abuild
-          chown -R builder:builder "$GITHUB_WORKSPACE"
-          sudo -u builder abuild-keygen -a -n
       - name: Build packages and archive
         run: |
-          sudo -u builder sh -c 'cd packaging/alpine && abuild -r'
-          sudo -u builder make clean all check
           mkdir dist
-          find /home/builder/packages -type f -name '*.apk' -exec cp {} dist/ \;
-          chown builder:builder dist
-          sudo -u builder scripts/make-release-archive.sh binary musl \
-            "dist/qsee-supplicant-$(cat VERSION)-linux-aarch64-musl.tar.gz"
+          docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work alpine:edge \
+            sh -euxc '
+              apk add --no-cache alpine-sdk linux-headers git
+              adduser -D -u "$(stat -c %u /work)" builder
+              addgroup builder abuild
+              su builder -c "abuild-keygen -a -n"
+              su builder -c "cd packaging/alpine && abuild -r"
+              find /home/builder/packages -type f -name "*.apk" \
+                -exec cp {} /work/dist/ \;
+              su builder -c "make clean all check"
+              su builder -c "scripts/make-release-archive.sh binary musl \
+                dist/qsee-supplicant-$(cat VERSION)-linux-aarch64-musl.tar.gz"
+            '
       - name: Inspect packages and archive
         run: |
           test "$(find dist -name '*.apk' | wc -l)" -eq 3
           file qsee-supplicant | grep -F 'ARM aarch64'
           readelf -l qsee-supplicant | grep -F '/lib/ld-musl-aarch64.so.1'
           tar -tzf dist/*-musl.tar.gz | grep -E '/usr/sbin/qsee-supplicant$'
-          apk info --allow-untrusted --contents dist/qsee-supplicant-*-r0.apk | \
-            grep -Fx 'usr/sbin/qsee-supplicant'
-          apk info --allow-untrusted --contents dist/qsee-supplicant-openrc-*.apk | \
-            grep -Fx 'etc/init.d/qsee-app-loader'
-          apk info --allow-untrusted --contents dist/qsee-supplicant-systemd-*.apk | \
-            grep -Fx 'usr/lib/systemd/system/qsee-app-loader@.service'
+          docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work alpine:edge \
+            sh -ec '
+              apk info --allow-untrusted --contents \
+                dist/qsee-supplicant-[0-9]*-r0.apk | \
+                grep -Fx usr/sbin/qsee-supplicant
+              apk info --allow-untrusted --contents \
+                dist/qsee-supplicant-openrc-*.apk | \
+                grep -Fx etc/init.d/qsee-app-loader
+              apk info --allow-untrusted --contents \
+                dist/qsee-supplicant-systemd-*.apk | \
+                grep -Fx usr/lib/systemd/system/qsee-app-loader@.service
+            '
       - uses: actions/upload-artifact@v7
         with:
           name: apk-musl-aarch64
