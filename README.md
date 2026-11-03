@@ -61,10 +61,10 @@ supplicant is a daemon in the normal Linux environment: it registers the
 listeners, receives requests from the TEE, performs the permitted operations,
 and returns the results.
 
-The current implementation provides two filesystem listener protocols. Its
-listener handlers are separate from the kernel request loop, so further
-QSEECOM listener protocols can be added without rewriting device discovery,
-registration, or request delivery.
+The current implementation provides two filesystem listener protocols and an
+optional eMMC RPMB listener. Its listener handlers are separate from the kernel
+request loop, so further QSEECOM listener protocols can be added without
+rewriting device discovery, registration, or request delivery.
 
 ## Programs and services
 
@@ -77,7 +77,8 @@ request state or its open storage descriptors.
 - `qsee-supplicant` is the listener daemon. One instance serves the whole
   machine. It registers the File System (FS) and GlobalPlatform File System
   (GPFS) listener services. It answers their requests and stores their files
-  under the configured state directory.
+  under the configured state directory. With `--rpmb-device`, it also forwards
+  RPMB requests to the selected eMMC device.
 - `qsee-app-loader` keeps one named TA loaded. If the TA is already resident,
   it attaches to it; if the TA is absent, it loads it. It then keeps its
   kernel session open. Run one loader process for each TA the system needs to
@@ -152,12 +153,13 @@ kernel delivers requests for all registered listeners through the Linux TEE
 subsystem's `TEE_IOC_SUPPL_RECV` receive operation. The supplicant reads the
 listener number from `arg.func` and picks the matching handler.
 
-This release implements the two file services below:
+The following listener services are implemented:
 
 | Listener | Service | Status |
 |---:|---|---|
 | 10 | File system (FS) | Implemented and tested |
 | 28672 | GlobalPlatform file system (GPFS) | Implemented and tested |
+| 8192 | Replay Protected Memory Block (RPMB) | eMMC; enabled with `--rpmb-device` |
 
 FS and GPFS are separate protocols. FS provides conventional operations on
 files and directories. GPFS stores whole objects with its own request format;
@@ -171,7 +173,6 @@ following services are known but are not implemented by this project:
 |---:|---|
 | 11 | Time |
 | 4352 | GlobalPlatform request cancellation |
-| 8192 | Replay Protected Memory Block (RPMB) |
 | 12288 | Service labelled `SSD` by `qseecomd`; its full name has not been established |
 | 16384 | Secure user interface (secure UI) |
 | 36864 | Interrupt |
@@ -196,6 +197,59 @@ differs. This project implements the legacy QSEECOM side and used MinkIPC to
 verify the service protocols. It does not include the MinkIPC transport or
 runtime, only selected message-layout definitions derived from MinkIPC.
 
+### RPMB
+
+RPMB support requires an already provisioned eMMC device. Select it explicitly:
+
+```sh
+qsee-supplicant --state-dir /var/lib/qsee-supplicant \
+  --rpmb-device /dev/mmcblk0rpmb
+```
+
+Use the RPMB character device belonging to the storage used by QSEE. The
+supplicant checks its `mmc_rpmb` sysfs subsystem and reads the parent card's
+capacity and reliable-write attributes. It does not guess a device or fall back
+to another one. An invalid or unavailable configured device prevents startup.
+The descriptor stays open for the lifetime of the process. An advisory lock
+excludes another cooperating listener; it does not exclude software that
+ignores that lock.
+
+Without `--rpmb-device`, listener 8192 is not registered and no RPMB device is
+opened. The supplied service units leave it disabled; device integration must
+add the option to the service command when RPMB is needed. No additional
+capability is required for the eMMC character-device ioctl interface.
+
+The listener follows the layouts in Qualcomm's
+[`rpmb_service.h`](https://github.com/qualcomm/minkipc/blob/5e3c6951d13162a262ea65ea8e8351228f092b58/listeners/librpmbservice/rpmb_service.h).
+It uses a 20040-byte shared buffer. Header fields are 32-bit little-endian
+integers; the 512-byte RPMB frames retain their original big-endian fields.
+
+| Command | Request | Response |
+|---|---|---|
+| `0x101` init | Command, requested version | Command, negotiated version, status, capacity in 512-byte sectors, reliable-write frame count; version 2 adds device type and four zero reserved fields |
+| `0x102` read | Command, response frame count, request length, request offset, version, unused reliable-write count | Command, status, response length, response offset, version, followed by the returned frames |
+| `0x103` write | Command, request frame count, request length, request offset, version, frames per authenticated batch | Same header as read, followed by the final write-result frame |
+| `0x104` partition | Partition query | Command, failure status, zero partitions, response offset 16 |
+
+Init negotiates version 1 or 2; requests for later versions receive version 2.
+Read and write echo the request version unchanged; their response data starts
+at offset 20.
+Failure status is `-1`, with no response data; success status is zero. Unknown
+commands and undersized shared buffers fail the listener request. Invalid frame
+counts, offsets, operations and batch sizes are rejected before device I/O.
+
+Reads accept an authenticated-read request or a single write-counter request.
+Writes accept only authenticated-write frames. Key programming and partition
+provisioning are not implemented. The listener forwards the firmware's frames
+without generating keys, changing MACs or interpreting protected data. QSEE and
+the eMMC device perform authentication.
+
+Each transfer uses `MMC_IOC_MULTI_CMD` to keep the request and response together.
+Writes preserve the batch size supplied by QSEE, stop at the first device or
+RPMB-result error, and are never retried automatically. Earlier batches may
+already have been written when a later batch fails. Temporary request copies
+are erased after use, and failed responses contain no stale frame data.
+
 ## Build and test
 
 ```sh
@@ -206,7 +260,9 @@ make DESTDIR="$pkgdir" install
 
 The tests use a temporary directory and do not require TEE hardware. They
 cover listener request parsing, safe path handling, restrictive file modes,
-atomic GPFS object replacement, and protocol-required backup files.
+atomic GPFS object replacement, and protocol-required backup files. RPMB tests
+use synthetic frames and intercept device access to check request validation,
+device selection, command ordering, batching and failure handling.
 
 ### Distribution packages
 

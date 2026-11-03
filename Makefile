@@ -6,6 +6,7 @@ CFLAGS += -std=c11 -Wall -Wextra -Werror
 COMMON = src/path.c src/services.c src/handle_db.c src/fs.c src/gpfs.c
 NOTIFY = src/notify.c
 APP_ACQUIRE = src/app_acquire.c
+RPMB = src/rpmb.c src/rpmb_emmc.c
 THREAD_LIBS = -pthread
 
 PREFIX ?= /usr
@@ -18,7 +19,7 @@ DESTDIR ?=
 .PHONY: all check clean install install-bin install-doc install-openrc install-systemd
 all: qsee-supplicant qsee-app-loader
 
-qsee-supplicant: src/main.c src/transport_qseecom.c $(COMMON) $(NOTIFY)
+qsee-supplicant: src/main.c src/transport_qseecom.c $(COMMON) $(NOTIFY) $(RPMB)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(THREAD_LIBS) $(LDLIBS)
 
 qsee-app-loader: src/app_loader.c $(APP_ACQUIRE) $(NOTIFY)
@@ -33,10 +34,21 @@ test-notify: tests/test_notify.c $(NOTIFY)
 test-app-acquire: tests/test_app_acquire.c $(APP_ACQUIRE)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-check: test-protocol test-notify test-app-acquire
+test-rpmb: tests/test_rpmb.c src/rpmb.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+test-rpmb-emmc: tests/test_rpmb_emmc.c src/rpmb_emmc.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ \
+		-Wl,--wrap=open,--wrap=openat,--wrap=fstat,--wrap=readlinkat \
+		-Wl,--wrap=read,--wrap=close,--wrap=flock,--wrap=ioctl $(LDLIBS)
+
+check: test-protocol test-notify test-app-acquire \
+		test-rpmb test-rpmb-emmc
 	./test-protocol
 	./test-notify
 	./test-app-acquire
+	./test-rpmb
+	./test-rpmb-emmc
 
 install: install-bin install-systemd install-openrc install-doc
 
@@ -60,4 +72,5 @@ install-doc:
 	install -m 0644 README.md $(DESTDIR)$(DOCDIR)/README.md
 
 clean:
-	rm -f qsee-supplicant qsee-app-loader test-protocol test-notify test-app-acquire
+	rm -f qsee-supplicant qsee-app-loader test-protocol test-notify test-app-acquire \
+		test-rpmb test-rpmb-emmc
