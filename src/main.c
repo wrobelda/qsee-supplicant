@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "qsee_supplicant.h"
 #include "notify.h"
+#include "rpmb.h"
 
 #include <errno.h>
+#include <getopt.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -23,12 +26,50 @@ static void ready_handler(void *data)
 
 int main(int argc, char **argv)
 {
-	const char *state = "/var/lib/qsee-supplicant"; struct qs_store store = { .root_fd = -1 };
+	const struct option options[] = {
+		{ "state-dir", required_argument, NULL, 's' },
+		{ "rpmb-device", required_argument, NULL, 'r' },
+		{ NULL, 0, NULL, 0 },
+	};
+	const char *state = "/var/lib/qsee-supplicant", *rpmb = NULL;
+	struct qs_store store = { .root_fd = -1 };
+	struct qs_service *services;
+	size_t count = qs_builtin_service_count;
 	unsigned int delay = 1;
-	if (argc == 3 && !strcmp(argv[1], "--state-dir")) state = argv[2];
-	else if (argc != 1) { fprintf(stderr, "usage: %s [--state-dir PATH]\n", argv[0]); return 2; }
+	int option, ret;
+
+	while ((option = getopt_long(argc, argv, "", options, NULL)) != -1) {
+		switch (option) {
+		case 's': state = optarg; break;
+		case 'r': rpmb = optarg; break;
+		default: goto usage;
+		}
+	}
+	if (optind != argc)
+		goto usage;
+	services = calloc(count + 1, sizeof(*services));
+	if (!services) {
+		perror("listener services");
+		return 1;
+	}
+	memcpy(services, qs_builtin_services, count * sizeof(*services));
 	umask(0077);
-	if (qs_store_open(&store, state, 0600, 0700)) { perror("state directory"); return 1; }
+	if (qs_store_open(&store, state, 0600, 0700)) {
+		perror("state directory");
+		free(services);
+		return 1;
+	}
+	if (rpmb) {
+		ret = qs_rpmb_open(rpmb);
+		if (ret) {
+			fprintf(stderr, "event=rpmb_open_error path=%s errno=%d message=\"%s\"\n",
+				rpmb, -ret, strerror(-ret));
+			qs_store_close(&store);
+			free(services);
+			return 1;
+		}
+		services[count++] = qs_rpmb_service;
+	}
 	{
 		struct sigaction action = { .sa_handler = stop_handler };
 		sigemptyset(&action.sa_mask);
@@ -38,8 +79,7 @@ int main(int argc, char **argv)
 	}
 	while (!stopping) {
 		fprintf(stderr, "event=transport_start transport=%s state=%s\n", qs_qseecom_transport.name, state);
-		if (!qs_qseecom_transport.serve(&store, qs_builtin_services,
-					 qs_builtin_service_count, &stopping,
+		if (!qs_qseecom_transport.serve(&store, services, count, &stopping,
 					 ready_handler, &delay)) break;
 		fprintf(stderr, "event=transport_error transport=%s errno=%d message=\"%s\" retry=%u\n",
 			qs_qseecom_transport.name, errno, strerror(errno), delay);
@@ -47,5 +87,10 @@ int main(int argc, char **argv)
 		if (delay < 30) delay *= 2;
 	}
 	qs_store_close(&store);
+	qs_rpmb_close();
+	free(services);
 	fprintf(stderr, "event=shutdown\n"); return 0;
+usage:
+	fprintf(stderr, "usage: %s [--state-dir PATH] [--rpmb-device PATH]\n", argv[0]);
+	return 2;
 }

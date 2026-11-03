@@ -3,3 +3,5 @@
 /test-protocol
 /test-notify
 /test-app-acquire
+/test-rpmb
+/test-rpmb-emmc
